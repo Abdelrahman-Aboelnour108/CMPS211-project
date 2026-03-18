@@ -8,27 +8,30 @@ public class CharCRDT {
     private int userid;
     private Clock clock;
     private Map<CharID, CharNode> nodeMap;
+    public final CharID rootID = new CharID(-1, -1);
 
     public CharCRDT(int userid) {
         this.userid = userid;
         this.clock = new Clock();
-        this.root = new CharNode(null, null, '\0');
+        this.root = new CharNode(rootID, null, '\0');
         this.nodeMap = new HashMap<>();
+        this.nodeMap.put(rootID, root);
     }
 
     public CharID generateID() {
+
         return new CharID(userid, clock.tick());
     }
 
 
 
-    public CharNode createNode(CharID parentID, char value) {
+   /* public CharNode createNode(CharID parentID, char value) {
         CharID ID = generateID();
         return new CharNode(ID, parentID, value);
-    }
+    }*/
 
     private void depthFirstTraversal(CharNode node, List<CharNode> result){
-        if (node.getID() != null && !node.isDeleted()) {
+        if (node!=root  && !node.isDeleted()) {
             result.add(node);
         }
         for (CharNode child : node.getChildren()) {
@@ -41,7 +44,17 @@ public class CharCRDT {
         depthFirstTraversal(root, result);
         return result;
     }
+    // JANA BOSY 3LA DA
+    public void insertNode(CharID parentID, char value) {
+        CharNode parent = nodeMap.get(parentID);
+        if (parent != null) {
+            CharID newID = generateID();
+            CharNode newNode = new CharNode(newID, parentID, value);
 
+            parent.addChild(newNode);      // Attaches it to the tree
+            nodeMap.put(newID, newNode);   // Puts it in the map
+        }
+    }
 
 
 
