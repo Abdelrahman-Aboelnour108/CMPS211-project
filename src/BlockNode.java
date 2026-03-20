@@ -50,12 +50,42 @@ private final List<BlockNode> children;
     }
 
     public CharNode addChar(CharID parentID, char value) {
-        CharNode newCharNode = content.createNode(parentID, value);
-        return newCharNode;
+        return content.insertNode(parentID, value);
     }
     
     public List<CharNode> getChars() {
         return content.getOrderedNodes();
+    }
+
+    public boolean moveAllTextToAfterLine(BlockNode targetNode,int splitLineCount) {
+        int currentLines = 0;
+        CharID lastCharID = targetNode.getLastCharID();
+
+        for (CharNode charNode : getChars()) {
+            
+            if (currentLines >= splitLineCount)
+             {
+                CharNode newChar = targetNode.addChar(lastCharID, charNode.getValue());
+                if (newChar == null) {
+                     return false;
+                }
+                lastCharID = newChar.getID();
+                charNode.SetDeleted(true);
+            }
+            if (charNode.getValue() == '\n') {
+                currentLines++;
+            }
+        }
+        return true;
+    }
+
+    public CharID getLastCharID() {
+        List<CharNode> chars = getChars();
+        if (!chars.isEmpty()) {
+            return chars.get(chars.size() - 1).getID();
+        }
+
+        return null;
     }
 
      public void deleteBlock() {

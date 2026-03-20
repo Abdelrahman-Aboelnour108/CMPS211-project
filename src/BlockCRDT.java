@@ -3,8 +3,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import javax.swing.plaf.basic.BasicInternalFrameTitlePane.MaximizeAction;
-
 
 
 public class BlockCRDT {
@@ -102,17 +100,9 @@ public class BlockCRDT {
 
     private void splitBlock(BlockNode sourceNode) {
         BlockNode targetNode = createSiblingBlock(sourceNode);
-
-        moveTextAfterLine(sourceNode, targetNode, MAX_LINES/2);
+        sourceNode.moveAllTextToAfterLine(targetNode, MAX_LINES/2);
     }
 
-
-    private CharID moveCharToNewNode(CharNode sourceNode, BlockNode newNode, CharID lastCharID) {
-        CharNode newChar = newNode.addChar(lastCharID, sourceNode.getValue());
-        lastCharID = newChar.getID();
-        sourceNode.SetDeleted(true);
-        return lastCharID;
-    }
 
     private BlockNode createSiblingBlock(BlockNode sourceNode) {
         BlockNode newNode = createNode(sourceNode.getId(), new CharCRDT(this.userid));
@@ -120,27 +110,12 @@ public class BlockCRDT {
         return newNode;
     }
 
-    private void moveTextAfterLine(BlockNode sourceNode, BlockNode targetNode, int splitLineCount) {
-        int newlineCount = 0;
-        CharID lastCharID = null;
-
-        for (CharNode charNode : sourceNode.getChars()) {
-            if (newlineCount >= splitLineCount) {
-                lastCharID = moveCharToNewNode(charNode, targetNode, lastCharID);
-                continue; 
-            }
-
-            if (charNode.getValue() == '\n') {
-                newlineCount++;
-            }
-        }
-    }
-
     public void mergeBlock(BlockNode targetNode) {
         BlockNode siblingNode = findSiblingForMerge(targetNode);
         if (siblingNode != null) {
-            moveAllText(siblingNode, targetNode);
-            deleteNode(siblingNode.getId());
+            if (siblingNode.moveAllTextToAfterLine(targetNode,0)) {
+                deleteNode(siblingNode.getId());
+            }
         }
     }
     private BlockNode findSiblingForMerge(BlockNode targetNode) {
@@ -158,25 +133,4 @@ public class BlockCRDT {
         return null;
     }
    
-    private void moveAllText(BlockNode sourceNode, BlockNode targetNode) {
-        CharID lastCharID = getlastcharID(targetNode);
-        
-
-        for (CharNode charNode : sourceNode.getChars()) {
-            CharNode newChar = targetNode.addChar(lastCharID, charNode.getValue());
-            lastCharID = newChar.getID(); 
-            
-            charNode.SetDeleted(true);
-        }
-    }
-
-    private CharID getlastcharID(BlockNode node) {
-        
-        List<CharNode> chars = node.getChars();
-        if (!chars.isEmpty()) {
-            return chars.get(chars.size() - 1).getID();
-        }
-    
-        return null;
-    }
 }

@@ -45,7 +45,7 @@ public class CharCRDT {
         return result;
     }
     // JANA BOSY 3LA DA
-    public void insertNode(CharID parentID, char value) {
+    public CharNode insertNode(CharID parentID, char value) {
         CharNode parent = nodeMap.get(parentID);
         if (parent != null) {
             CharID newID = generateID();
@@ -53,7 +53,10 @@ public class CharCRDT {
 
             parent.addChild(newNode);      // Attaches it to the tree
             nodeMap.put(newID, newNode);   // Puts it in the map
+            return newNode;
         }
+
+        return null;
     }
 
 
