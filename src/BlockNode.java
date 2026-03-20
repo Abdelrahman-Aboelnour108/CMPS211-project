@@ -6,14 +6,14 @@ public class BlockNode {
 
 private final BlockID id;
 private final BlockID parentID;
-private final CharCRDT content;
+private final CharCRDT charCRDT;
 private  boolean isDeleted;
 private final List<BlockNode> children;
 
     public BlockNode(BlockID id, BlockID parentID, CharCRDT content) {
     this.id = id;
     this.parentID = parentID;
-    this.content = content;
+    this.charCRDT = content;
     this.isDeleted = false;
     this.children = new ArrayList<>();
     }
@@ -31,7 +31,7 @@ private final List<BlockNode> children;
     }
 
     public CharCRDT getContent() {
-        return content;
+        return charCRDT;
     }
 
     public List<BlockNode> getChildren() {
@@ -50,11 +50,11 @@ private final List<BlockNode> children;
     }
 
     public CharNode addChar(CharID parentID, char value) {
-        return content.insertNode(parentID, value);
+        return charCRDT.insertNode(parentID, value);
     }
     
     public List<CharNode> getChars() {
-        return content.getOrderedNodes();
+        return charCRDT.getOrderedNodes();
     }
 
     public boolean moveAllTextToAfterLine(BlockNode targetNode,int splitLineCount) {
@@ -93,7 +93,7 @@ private final List<BlockNode> children;
      }
     private int getTotalLineCount() {
         int lines = 1;
-        for (CharNode charNode : content.getOrderedNodes()) {
+        for (CharNode charNode : charCRDT.getOrderedNodes()) {
             if (charNode.getValue() == '\n') {
                 lines++;
             }
@@ -102,7 +102,7 @@ private final List<BlockNode> children;
     }
 
     private boolean isEmpty() {
-        return content.getOrderedNodes().isEmpty();
+        return charCRDT.getOrderedNodes().isEmpty();
     }
     
     public void addChild(BlockNode child) {
