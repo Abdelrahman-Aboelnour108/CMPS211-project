@@ -3,10 +3,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-
-
 public class BlockCRDT {
-    
+
     private static final int MAX_LINES = 10;
     private static final int MIN_LINES = 2;
     private static final BlockID ROOT_ID = new BlockID(-1, -1);
@@ -23,24 +21,21 @@ public class BlockCRDT {
         this.root = new BlockNode(ROOT_ID, null, null);
         nodeMap.put(ROOT_ID, root);
     }
-    private BlockID generateID() {
-        return new BlockID(userid, clock.tick());
+
+
+    public void insertBlock(BlockID parentID, CharCRDT content) {
+        BlockNode parentNode = getNode(parentID);
+
+        if (parentNode != null) {
+            BlockNode newNode = createNode(parentID, content);
+            parentNode.addChild(newNode);
+        }
     }
 
-    public BlockNode createNode(BlockID parentID, CharCRDT content) {
-        BlockID normalizedParentID = normalizeParentID(parentID);
-        BlockID ID = generateID();
-        BlockNode newNode = new BlockNode(ID, normalizedParentID, content);
-        nodeMap.put(ID, newNode);
+    public BlockNode insertTopLevelBlock(CharCRDT content) {
+        BlockNode newNode = createNode(null, content);
+        root.addChild(newNode);
         return newNode;
-    }
-
-    private BlockID normalizeParentID(BlockID parentID) {
-        return parentID == null ? ROOT_ID : parentID;
-    }
-
-    private BlockNode getNode(BlockID id) {
-        return nodeMap.get(normalizeParentID(id));
     }
 
     public void deleteNode(BlockID id) {
@@ -50,21 +45,12 @@ public class BlockCRDT {
         }
     }
 
-    public void insertBlock(BlockID parentID, CharCRDT content) {
-        BlockNode parentNode = getNode(parentID);
-
-        if (parentNode != null) {
-            BlockNode newNode = createNode(parentID, content);
-            parentNode.addChild(newNode);
-        }
-
+    public List<BlockNode> getOrderedNodes() {
+        List<BlockNode> result = new ArrayList<>();
+        depthFirstTraversal(root, result);
+        return result;
     }
 
-    public BlockNode insertTopLevelBlock(CharCRDT content) {
-        BlockNode newNode = createNode(null, content);
-        root.addChild(newNode);
-        return newNode;
-    }
 
     public boolean insertCharInBlock(BlockID blockID, char value, int index) {
         BlockNode blockNode = getNode(blockID);
@@ -84,16 +70,25 @@ public class BlockCRDT {
             parentID = chars.get(index - 1).getID();
         }
 
-        return (blockNode.addChar(parentID, value)) != null;
+        CharNode insertedChar = blockNode.addChar(parentID, value);
+        if (insertedChar == null) {
+            return false;
+        }
+
+        checkAndSplit_Merge(blockID);
+        return true;
     }
 
     public boolean deleteCharInBlock(BlockID blockID, int index) {
         BlockNode blockNode = getNode(blockID);
-        if (isblockEmpty(blockNode)) return false;
+        if (isblockEmpty(blockNode)) {
+            return false;
+        }
 
         List<CharNode> chars = blockNode.getChars();
-
-        if (index < 0 || index >= chars.size()) return false;
+        if (index < 0 || index >= chars.size()) {
+            return false;
+        }
 
         chars.get(index).SetDeleted(true);
         return true;
@@ -125,14 +120,73 @@ public class BlockCRDT {
         return mergeWithDirection(blockID, 1);
     }
 
+
+    public void checkAndSplit_Merge(BlockID targetblockID) {
+        BlockNode targetNode = getNode(targetblockID);
+        if (isblockEmpty(targetNode)) {
+            return;
+        }
+
+        if (isSplitNeeded(targetNode)) {
+            splitBlock(targetNode);
+        } else if (isMergeNeeded(targetNode)) {
+            mergeBlock(targetNode);
+        }
+    }
+
+    public void mergeBlock(BlockNode targetNode) {
+        BlockNode siblingNode = findNearestSiblingForMerge(targetNode);
+        if (siblingNode != null && siblingNode.moveAllText(targetNode)) {
+            deleteNode(siblingNode.getId());
+        }
+    }
+
+
+    private BlockID generateID() {
+        return new BlockID(userid, clock.tick());
+    }
+
+    public BlockNode createNode(BlockID parentID, CharCRDT content) {
+        BlockID normalizedParentID = normalizeParentID(parentID);
+        BlockID ID = generateID();
+        BlockNode newNode = new BlockNode(ID, normalizedParentID, content);
+        nodeMap.put(ID, newNode);
+        return newNode;
+    }
+
+    private BlockID normalizeParentID(BlockID parentID) {
+        return parentID == null ? ROOT_ID : parentID;
+    }
+
+    private BlockNode getNode(BlockID id) {
+        return nodeMap.get(normalizeParentID(id));
+    }
+
+
+    private void depthFirstTraversal(BlockNode node, List<BlockNode> result) {
+        if (node.getId() != null && !node.isDeleted()) {
+            result.add(node);
+        }
+        for (BlockNode child : node.getChildren()) {
+            depthFirstTraversal(child, result);
+        }
+    }
+
+
     private boolean mergeWithDirection(BlockID blockID, int direction) {
-        if (direction != -1 && direction != 1) return false;
+        if (direction != -1 && direction != 1) {
+            return false;
+        }
 
         BlockNode targetNode = getNode(blockID);
-        if (isblockEmpty(targetNode)) return false;
+        if (isblockEmpty(targetNode)) {
+            return false;
+        }
 
         BlockNode siblingNode = findSiblingByDirection(targetNode, direction);
-        if (siblingNode == null) return false;
+        if (siblingNode == null) {
+            return false;
+        }
 
         BlockNode sourceNode = direction == -1 ? targetNode : siblingNode;
         BlockNode destinationNode = direction == -1 ? siblingNode : targetNode;
@@ -145,110 +199,29 @@ public class BlockCRDT {
         return false;
     }
 
-    private void depthFirstTraversal(BlockNode node, List<BlockNode> result){
-        if (node.getId() != null && !node.isDeleted()) {
-            result.add(node);
-        }
-        for (BlockNode child : node.getChildren()) {
-            depthFirstTraversal(child, result);
-        }
-
-    }
-
-    public List<BlockNode> getOrderedNodes() {
-        List<BlockNode> result = new ArrayList<>();
-        depthFirstTraversal(root, result);
-        return result;
-    }
-    
-
-    public void checkAndSplit_Merge(BlockID targetblockID) {
-        BlockNode targetNode =getNode(targetblockID);
-
-        if (isblockEmpty(targetNode)) {
-            return;
-        }
-
-        if (isSplitNeeded(targetNode)) {
-            splitBlock(targetNode);
-        } else if (isMergeNeeded(targetNode)) {
-            mergeBlock(targetNode);
-        }
-       
-    }
-
-    private boolean isSplitNeeded(BlockNode node) {
-        return node.getLineCount() > MAX_LINES;
-    }
-
-    private boolean isMergeNeeded(BlockNode node) {
-        return node.getLineCount() < MIN_LINES;
-    }
-
-    private boolean isblockEmpty(BlockNode node) {
-        return node == null || node.isDeleted() || node.getContent() == null;
-    }
-
-    private boolean splitBlock(BlockNode sourceNode) {
-        BlockNode targetNode = createSiblingBlock(sourceNode);
-        if (targetNode != null)
-            return sourceNode.moveTextFromLine(targetNode, MAX_LINES/2);
-        return false;
-    }
-
-    private BlockNode splitBlock(BlockNode sourceNode, int cursorIndex) {
-        BlockNode targetNode = createSiblingBlock(sourceNode);
+    private BlockNode findNearestSiblingForMerge(BlockNode targetNode) {
         if (targetNode == null) {
             return null;
         }
 
-        if (!sourceNode.moveTextFromIndex(targetNode, cursorIndex)) {
+        BlockNode parent = getNode(targetNode.getParentID());
+        if (parent == null) {
             return null;
         }
-
-        return targetNode;
-    }
-
-    private BlockNode createSiblingBlock(BlockNode sourceNode) {
-        if (sourceNode == null) return null;
-
-        BlockID parentID = sourceNode.getParentID();
-        BlockNode parentNode = getNode(parentID);
-        if (parentNode == null) return null;
-        
-        BlockNode newNode = createNode(parentID, new CharCRDT(this.userid));
-        parentNode.addChild(newNode);
-        return newNode;
-    }
-
-    public void mergeBlock(BlockNode targetNode) {
-        BlockNode siblingNode = findNearestSiblingForMerge(targetNode);
-        if (siblingNode != null) {
-            if (siblingNode.moveAllText(targetNode)) {
-                deleteNode(siblingNode.getId());
-            }
-        }
-    }
-    private BlockNode findNearestSiblingForMerge(BlockNode targetNode) {
-
-        if (targetNode == null) return null;
-        
-
-        BlockNode parent = getNode(targetNode.getParentID());
-        if (parent == null)  return null; 
-        
 
         List<BlockNode> siblings = parent.getChildren();
         int targetIndex = siblings.indexOf(targetNode);
 
-        if (targetIndex == -1) return null;
+        if (targetIndex == -1) {
+            return null;
+        }
 
         BlockNode previousSibling = findActiveSibling(siblings, targetIndex - 1, -1);
-        if (previousSibling != null) return previousSibling;
-        
+        if (previousSibling != null) {
+            return previousSibling;
+        }
 
         return findActiveSibling(siblings, targetIndex + 1, 1);
-
     }
 
     private BlockNode findSiblingByDirection(BlockNode targetNode, int direction) {
@@ -280,5 +253,54 @@ public class BlockCRDT {
 
         return null;
     }
-   
+
+
+    private boolean isSplitNeeded(BlockNode node) {
+        return node.getLineCount() > MAX_LINES;
+    }
+
+    private boolean isMergeNeeded(BlockNode node) {
+        return node.getLineCount() < MIN_LINES;
+    }
+
+    private boolean isblockEmpty(BlockNode node) {
+        return node == null || node.isDeleted() || node.getContent() == null;
+    }
+
+    private boolean splitBlock(BlockNode sourceNode) {
+        BlockNode targetNode = createSiblingBlock(sourceNode);
+        if (targetNode != null) {
+            return sourceNode.moveTextFromLine(targetNode, MAX_LINES/2);
+        }
+        return false;
+    }
+
+    private BlockNode splitBlock(BlockNode sourceNode, int cursorIndex) {
+        BlockNode targetNode = createSiblingBlock(sourceNode);
+        if (targetNode == null) {
+            return null;
+        }
+
+        if (!sourceNode.moveTextFromIndex(targetNode, cursorIndex)) {
+            return null;
+        }
+
+        return targetNode;
+    }
+
+    private BlockNode createSiblingBlock(BlockNode sourceNode) {
+        if (sourceNode == null) {
+            return null;
+        }
+
+        BlockID parentID = sourceNode.getParentID();
+        BlockNode parentNode = getNode(parentID);
+        if (parentNode == null) {
+            return null;
+        }
+
+        BlockNode newNode = createNode(parentID, new CharCRDT(this.userid));
+        parentNode.addChild(newNode);
+        return newNode;
+    }
 }
