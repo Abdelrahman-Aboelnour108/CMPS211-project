@@ -15,11 +15,17 @@ public class EditorUI {
 
     private JFrame frame;
     private JTextPane textPane;
+    private String username;
+    private String sessionCode;
+    private DummySessionService sessionService;
+    private DefaultListModel<String> usersListModel;
+    private JList<String> usersList;
+    private SessionUsersListener usersListener;
 
     // 1. Declare your Document manager
     private Document doc;
 
-    public EditorUI(String username) {
+    public EditorUI(String username, String sessionCode,DummySessionService sessionService) {
 
         // --- MAKE IT LOOK MODERN ---
         try {
@@ -31,14 +37,17 @@ public class EditorUI {
         //doc = new Document(1);
 
         this.doc = new Document(new java.util.Random().nextInt(1000));
+        this.username = username;
+        this.sessionCode = sessionCode;
+        this.sessionService = sessionService;
         // ... use the username for the Window Title ...
-        frame = new JFrame("Collaborative Editor - " + username);
+        frame = new JFrame("Collaborative Editor - " + username + " (" + sessionCode + ")");
 
         // --- SETUP THE WINDOW ---
         //frame = new JFrame("Collaborative Text Editor");
 
 
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         frame.setSize(800, 600);
         frame.setLayout(new BorderLayout());
 
@@ -104,6 +113,8 @@ public class EditorUI {
 
         // Add the toolbar to the TOP of the window
         frame.add(toolBar, BorderLayout.NORTH);
+        JPanel usersPanel = createUsersPanel();
+        frame.add(usersPanel, BorderLayout.EAST);
 
         // --- SETUP THE TEXT AREA ---
         textPane = new JTextPane();
@@ -170,6 +181,18 @@ public class EditorUI {
             }
         });
 
+        usersListener = this::updateActiveUsers;
+        sessionService.addUsersListener(sessionCode, usersListener);
+        updateActiveUsers(sessionService.getUsersInSession(sessionCode));
+
+        frame.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
+                sessionService.leaveSession(username, sessionCode);
+                sessionService.removeUsersListener(sessionCode, usersListener);
+            }
+        });
+
         frame.setVisible(true);
     }
 
@@ -185,6 +208,29 @@ public class EditorUI {
         // (We use Math.min just as a safety net so it doesn't accidentally crash if the text is too short)
         textPane.setCaretPosition(Math.min(newCursorPosition, currentText.length()));
     }*/
+
+    private JPanel createUsersPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setPreferredSize(new Dimension(200, 0));
+        panel.setBorder(BorderFactory.createTitledBorder("Active Users"));
+
+        usersListModel = new DefaultListModel<>();
+        usersList = new JList<>(usersListModel);
+        usersList.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+
+        JScrollPane usersScrollPane = new JScrollPane(usersList);
+        panel.add(usersScrollPane, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    public void updateActiveUsers(List<String> users) {
+        usersListModel.clear();
+
+        for (String user : users) {
+            usersListModel.addElement(user);
+        }
+    }
 
     // --- THE DUMB VIEW RENDERER (UPGRADED FOR RICH TEXT) ---
     private void renderDocument(int newCursorPosition) {
@@ -216,11 +262,11 @@ public class EditorUI {
         textPane.setCaretPosition(Math.min(newCursorPosition, styledDoc.getLength()));
     }
 
-    public static void main(String[] args) {
+   /*   public static void main(String[] args) {
        // SwingUtilities.invokeLater(() -> new EditorUI());
         javax.swing.SwingUtilities.invokeLater(() -> {
             // We are passing "Guest" into the EditorUI here
             new EditorUI("Guest_" + (int)(Math.random() * 100));
         });
-    }
+    }*/
 }
