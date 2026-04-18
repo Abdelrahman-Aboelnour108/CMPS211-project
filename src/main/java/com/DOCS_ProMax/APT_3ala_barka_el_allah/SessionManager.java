@@ -9,9 +9,13 @@ import java.util.Random;
 
 public class SessionManager {
 
-    private final Map<String, Session> sessions = new HashMap<>();
-    private final Map<WebSocketSession, String> clientNames = new HashMap<>();
-    private final Map<WebSocketSession, String> clientSessions = new HashMap<>();
+    private final Map<String, Session>           sessions      = new HashMap<>();
+    private final Map<WebSocketSession, String>  clientNames   = new HashMap<>();
+    private final Map<WebSocketSession, String>  clientSessions = new HashMap<>();
+
+    // -----------------------------------------------------------------------
+    // Session lifecycle
+    // -----------------------------------------------------------------------
 
     public Session createSession(WebSocketSession conn, String username) {
         String editorCode = generateCode();
@@ -35,12 +39,23 @@ public class SessionManager {
         String code = clientSessions.get(conn);
         if (code != null) {
             Session session = sessions.get(code);
-            if (session != null) session.removeClient(conn);
+            if (session != null) {
+                session.removeClient(conn);
+                // Clean up empty sessions
+                if (session.getClients().isEmpty()) {
+                    sessions.remove(code);
+                }
+            }
         }
         clientNames.remove(conn);
         clientSessions.remove(conn);
     }
 
+    // -----------------------------------------------------------------------
+    // Query helpers
+    // -----------------------------------------------------------------------
+
+    /** Returns all WebSocket sessions in the same session as {@code sender}, excluding sender itself. */
     public List<WebSocketSession> getOtherClients(WebSocketSession sender) {
         String code = clientSessions.get(sender);
         if (code == null) return new ArrayList<>();
@@ -51,10 +66,12 @@ public class SessionManager {
         return others;
     }
 
+    /** Returns the session code the given connection belongs to, or null. */
     public String getSessionCode(WebSocketSession conn) {
         return clientSessions.get(conn);
     }
 
+    /** Returns the display names of every active client in the given session. */
     public List<String> getActiveUserNames(String code) {
         Session session = sessions.get(code.toUpperCase());
         if (session == null) return new ArrayList<>();
@@ -66,6 +83,20 @@ public class SessionManager {
         return names;
     }
 
+    /**
+     * Returns ALL WebSocket sessions (including the requester) that belong to a session.
+     * Used by Server when broadcasting to everyone (e.g. ACTIVE_USERS).
+     */
+    public List<WebSocketSession> getAllClientsInSession(String code) {
+        Session session = sessions.get(code.toUpperCase());
+        if (session == null) return new ArrayList<>();
+        return new ArrayList<>(session.getClients());
+    }
+
+    // -----------------------------------------------------------------------
+    // Code generation
+    // -----------------------------------------------------------------------
+
     private String generateCode() {
         String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         StringBuilder code = new StringBuilder();
@@ -76,6 +107,10 @@ public class SessionManager {
         return code.toString();
     }
 
+    // -----------------------------------------------------------------------
+    // Inner Session class
+    // -----------------------------------------------------------------------
+
     public static class Session {
         private final String code;
         private final List<WebSocketSession> clients = new ArrayList<>();
@@ -85,16 +120,9 @@ public class SessionManager {
             this.clients.add(owner);
         }
 
-        public void addClient(WebSocketSession conn) { clients.add(conn); }
+        public void addClient(WebSocketSession conn)    { clients.add(conn); }
         public void removeClient(WebSocketSession conn) { clients.remove(conn); }
-        public List<WebSocketSession> getClients() { return clients; }
-        public String getCode() { return code; }
-    }
-
-    public List<WebSocketSession> getAllClientsInSession(String code) {
-        Session session = sessions.get(code.toUpperCase());
-        if (session == null) return new ArrayList<>();
-        return new ArrayList<>(session.getClients());
+        public List<WebSocketSession> getClients()      { return clients; }
+        public String getCode()                         { return code; }
     }
 }
-

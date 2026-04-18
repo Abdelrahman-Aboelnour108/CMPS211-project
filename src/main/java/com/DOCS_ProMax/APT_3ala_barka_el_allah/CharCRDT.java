@@ -22,53 +22,47 @@ public class CharCRDT {
 
     public CharCRDT(int userid, Clock clock) {
         this.userid = userid;
-        this.clock = clock;     // <--- USE THE SHARED CLOCK
+        this.clock = clock;
         this.root = new CharNode(rootID, null, '\0');
         this.nodeMap = new HashMap<>();
         this.nodeMap.put(rootID, root);
     }
 
     public CharID generateID() {
-
         return new CharID(userid, clock.tick());
     }
 
 
+    public CharNode getNode(CharID id) {
+        return nodeMap.get(id);
+    }
 
-   /* public CharNode createNode(CharID parentID, char value) {
-        CharID ID = generateID();
-        return new CharNode(ID, parentID, value);
-    }*/
-
-    private void depthFirstTraversal(CharNode node, List<CharNode> result){
-        if (node!=root  && !node.isDeleted()) {
+    private void depthFirstTraversal(CharNode node, List<CharNode> result) {
+        if (node != root && !node.isDeleted()) {
             result.add(node);
         }
         for (CharNode child : node.getChildren()) {
             depthFirstTraversal(child, result);
         }
-
     }
+
     public List<CharNode> getOrderedNodes() {
         List<CharNode> result = new ArrayList<>();
         depthFirstTraversal(root, result);
         return result;
     }
-    // JANA BOSY 3LA DA
+
     public CharNode insertNode(CharID parentID, char value) {
         CharNode parent = nodeMap.get(parentID);
         if (parent != null) {
             CharID newID = generateID();
             CharNode newNode = new CharNode(newID, parentID, value);
-
-            parent.addChild(newNode);      // Attaches it to the tree
-            nodeMap.put(newID, newNode);   // Puts it in the map
+            parent.addChild(newNode);
+            nodeMap.put(newID, newNode);
             return newNode;
         }
-
         return null;
     }
-
 
     public void RemotelyInsertion(CharID incomingID, CharID parentID, char value) {
         if (nodeMap.containsKey(incomingID)) {
@@ -79,13 +73,12 @@ public class CharCRDT {
 
         if (parent != null) {
             CharNode incomingNode = new CharNode(incomingID, parentID, value);
-
             parent.addChild(incomingNode);
             nodeMap.put(incomingID, incomingNode);
+            // Advance our clock so future local IDs are always greater than any received remote ID
+            clock.advanceTo(incomingID.getClock());
         } else {
             System.out.println("Error: Parent " + parentID + " not found for incoming character '" + value + "'");
         }
     }
-
-
 }
