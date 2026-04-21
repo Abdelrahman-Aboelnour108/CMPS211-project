@@ -66,7 +66,7 @@ public class Document {
         }
     }*/
 
-    // REPLACE LocalInsert — now returns the inserted CharNode
+    // LocalInsert that returns the inserted CharNode
     public CharNode LocalInsert(char value, int index) {
         List<CharNode> NodesList = crdtInstance.getOrderedNodes();
         CharID parentID;
@@ -78,7 +78,7 @@ public class Document {
         return crdtInstance.insertNode(parentID, value);   // <-- returns CharNode
     }
 
-    // REPLACE LocalDelete — now returns the deleted CharNode
+    //LocalDelete that returns the deleted CharNode
     public CharNode LocalDelete(int index) {
         List<CharNode> NodesList = crdtInstance.getOrderedNodes();
         if (index >= 0 && index < NodesList.size()) {
@@ -117,7 +117,7 @@ public class Document {
     public void InheritFormatting(int newlyInsertedIndex) {
         List<CharNode> visibleNodes = GetVisibleNodes();
 
-        // Make sure there is actually a letter behind the one we just typed!
+        // Make sure there is actually a letter behind the one we just typed
         if (newlyInsertedIndex > 0 && newlyInsertedIndex < visibleNodes.size()) {
             CharNode prevNode = visibleNodes.get(newlyInsertedIndex - 1);
             CharNode newNode = visibleNodes.get(newlyInsertedIndex);
