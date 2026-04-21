@@ -34,7 +34,13 @@ public class EditorUI {
     private Highlighter highlighter;
     private Map<String, Object> cursorHighlights = new HashMap<>();
     private Map<String, Color> userColors = new HashMap<>();
-
+    private final Map<String, Color> assignedColors = new java.util.LinkedHashMap<>();
+    private final Color[] CURSOR_COLORS = {
+            new Color(255, 105, 180), // pink
+            new Color(30, 144, 255),  // blue
+            new Color(50, 205, 50),   // green
+            new Color(255, 165, 0)    // orange
+    };
 
     //private SessionUsersListener usersListener;
 
@@ -283,8 +289,10 @@ public class EditorUI {
                         CharNode deleted =doc.LocalDelete(cursorPosition - 1);
 
                         if (deleted != null) client.sendDeleteChar(deleted);
+                        shiftRemoteCursors(cursorPosition - 1, -1);
 
                         renderDocument(cursorPosition - 1);
+                        drawRemoteCursors();
                     }
                 }
                 // 2. Handle Enter (New Line) safely!
@@ -298,6 +306,7 @@ public class EditorUI {
                     // Explicitly insert exactly one newline character
                     CharNode inserted = doc.LocalInsert('\n', safeIndex);   // returns node
                     if (inserted != null) client.sendInsertChar(inserted);  // ADD THIS LINE
+                    shiftRemoteCursors(cursorPosition - 1, -1);
                     renderDocument(safeIndex + 1);
                     drawRemoteCursors();
                 }
@@ -323,6 +332,8 @@ public class EditorUI {
                 doc.InheritFormatting(safeIndex);
 
                 if (inserted != null) client.sendInsertChar(inserted);
+
+                shiftRemoteCursors(safeIndex, +1);
 
                 // Copy the formatting of the letter we just typed next to!
 
@@ -387,13 +398,25 @@ public class EditorUI {
         return panel;
     }
 
-    public void updateActiveUsers(List<String> users) {
+    /*public void updateActiveUsers(List<String> users) {
         usersListModel.clear();
 
         for (String user : users) {
             usersListModel.addElement(user);
         }
 
+        remoteCursors.keySet().removeIf(user -> !users.contains(user));
+        updateRemoteCursorDisplay();
+        drawRemoteCursors();
+    }*/
+
+    public void updateActiveUsers(List<String> users) {
+        usersListModel.clear();
+        for (String user : users) {
+            usersListModel.addElement(user);
+        }
+        // remove colors for users who left
+        assignedColors.keySet().retainAll(users);
         remoteCursors.keySet().removeIf(user -> !users.contains(user));
         updateRemoteCursorDisplay();
         drawRemoteCursors();
@@ -425,7 +448,7 @@ public class EditorUI {
 
 
 
-    private Color getUserColor(String user) {
+    /*private Color getUserColor(String user) {
         int index = Math.abs(user.toLowerCase().hashCode()) % 4;
 
         Color[] colors = {
@@ -436,9 +459,17 @@ public class EditorUI {
         };
 
         return colors[index];
+    }*/
+
+    private Color getUserColor(String user) {
+        if (!assignedColors.containsKey(user)) {
+            int index = assignedColors.size() % CURSOR_COLORS.length;
+            assignedColors.put(user, CURSOR_COLORS[index]);
+        }
+        return assignedColors.get(user);
     }
 
-    private void drawRemoteCursors() {
+    /*private void drawRemoteCursors() {
         for (Object tag : cursorHighlights.values()) {
             highlighter.removeHighlight(tag);
         }
@@ -469,6 +500,37 @@ public class EditorUI {
 
                 cursorHighlights.put(user, tag);
 
+            } catch (BadLocationException e) {
+                e.printStackTrace();
+            }
+        }
+    }*/
+
+    private void drawRemoteCursors() {
+        for (Object tag : cursorHighlights.values()) {
+            highlighter.removeHighlight(tag);
+        }
+        cursorHighlights.clear();
+
+        int length = textPane.getDocument().getLength();
+
+        for (Map.Entry<String, Integer> entry : remoteCursors.entrySet()) {
+            String user = entry.getKey();
+            int pos = entry.getValue();
+
+            // Clamp to valid document range
+            pos = Math.max(0, Math.min(pos, length));
+            if (length == 0) continue;
+
+            try {
+                Color color = getUserColor(user);
+                // Highlight range just needs to be valid; CursorPainter uses p0 to draw the line
+                int p0 = Math.min(pos, length - 1);
+                Object tag = highlighter.addHighlight(
+                        p0, p0 + 1,
+                        new CursorPainter(color, pos)  // pass actual pos separately
+                );
+                cursorHighlights.put(user, tag);
             } catch (BadLocationException e) {
                 e.printStackTrace();
             }
@@ -505,6 +567,14 @@ public class EditorUI {
         // 5. Put the cursor back where it belongs safely
         textPane.setCaretPosition(Math.min(newCursorPosition, styledDoc.getLength()));
     }
+    private void shiftRemoteCursors(int atIndex, int delta) {
+        for (Map.Entry<String, Integer> entry : remoteCursors.entrySet()) {
+            int pos = entry.getValue();
+            if (pos > atIndex) {
+                remoteCursors.put(entry.getKey(), pos + delta);
+            }
+        }
+    }
 
    /*   public static void main(String[] args) {
        // SwingUtilities.invokeLater(() -> new EditorUI());
@@ -513,4 +583,31 @@ public class EditorUI {
             new EditorUI("Guest_" + (int)(Math.random() * 100));
         });
     }*/
+
+    // Draws a thin vertical line instead of a block highlight
+    private static class CursorPainter implements Highlighter.HighlightPainter {
+        private final Color color;
+        private final int cursorPos; // the REAL position, not the clamped one
+
+        CursorPainter(Color color, int cursorPos) {
+            this.color = color;
+            this.cursorPos = cursorPos;
+        }
+
+        @Override
+        public void paint(Graphics g, int p0, int p1, Shape bounds, JTextComponent c) {
+            try {
+                // Use the actual cursor position for modelToView
+                Rectangle r = c.modelToView(cursorPos);
+                if (r != null) {
+                    g.setColor(color);
+                    g.fillRect(r.x, r.y, 3, r.height); // thin vertical line at exact position
+                }
+            } catch (BadLocationException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+
 }
