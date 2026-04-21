@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Iterator;
 
 public class CharCRDT {
     private CharNode root;
@@ -11,6 +12,7 @@ public class CharCRDT {
     private Clock clock;
     private Map<CharID, CharNode> nodeMap;
     public final CharID rootID = new CharID(-1, -1);
+    private final List<PendingOp> pendingOps = new ArrayList<>();
 
     public CharCRDT(int userid) {
         this.userid = userid;
@@ -18,6 +20,20 @@ public class CharCRDT {
         this.root = new CharNode(rootID, null, '\0');
         this.nodeMap = new HashMap<>();
         this.nodeMap.put(rootID, root);
+    }
+
+    private static class PendingOp {
+        final CharID incomingID;
+        final CharID parentID;
+        final char value;
+        boolean isBold;
+        boolean isItalic;
+
+        PendingOp(CharID incomingID, CharID parentID, char value) {
+            this.incomingID = incomingID;
+            this.parentID = parentID;
+            this.value = value;
+        }
     }
 
     public CharCRDT(int userid, Clock clock) {
@@ -77,10 +93,28 @@ public class CharCRDT {
             nodeMap.put(incomingID, incomingNode);
             // Advance our clock so future local IDs are always greater than any received remote ID
             clock.advanceTo(incomingID.getClock());
+            retryPending();
             return incomingNode;
         } else {
-            System.out.println("Error: Parent " + parentID + " not found for incoming character '" + value + "'");
+            System.out.println("Error: Parent " + parentID + " not found for incoming character '" + value + ", waiting for parent to arrive");
+            pendingOps.add(new PendingOp(incomingID, parentID, value));
             return null;
+        }
+    }
+    // Keep retrying until no more pending ops can be resolved
+    private void retryPending() {
+        boolean progress = true;
+        while (progress) {
+            progress = false;
+            Iterator<PendingOp> it = pendingOps.iterator();
+            while (it.hasNext()) {
+                PendingOp op = it.next();
+                if (nodeMap.containsKey(op.parentID)) {
+                    it.remove(); // remove from pending BEFORE inserting
+                    RemotelyInsertion(op.incomingID, op.parentID, op.value);
+                    progress = true; // we resolved one, loop again
+                }
+            }
         }
     }
 }

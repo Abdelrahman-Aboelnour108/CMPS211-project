@@ -17,8 +17,11 @@ public class StartScreen {
         //sessionService = new DummySessionService();
         try {
             Clock clock = new Clock();
-            BlockCRDT doc = new BlockCRDT(1, clock);
-            BlockNode block = doc.insertTopLevelBlock(new CharCRDT(1, clock));
+           // BlockCRDT doc = new BlockCRDT(1, clock);
+           // BlockNode block = doc.insertTopLevelBlock(new CharCRDT(1, clock));
+            int userId = (int)(System.currentTimeMillis() % 100000); // unique enough
+            BlockCRDT doc = new BlockCRDT(userId, clock);
+            BlockNode block = doc.insertTopLevelBlock(new CharCRDT(userId, clock));
 
             client = new Client("ws://localhost:8080/collab", doc, clock, block.getId());
             client.connectBlocking();

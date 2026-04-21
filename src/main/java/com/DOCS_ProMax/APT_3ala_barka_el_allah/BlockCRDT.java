@@ -169,7 +169,7 @@ public class BlockCRDT {
 
 
     private void depthFirstTraversal(BlockNode node, List<BlockNode> result) {
-        if (node.getId() != null && !node.isDeleted()) {
+        if (node!= root && !node.isDeleted()) {
             result.add(node);
         }
         for (BlockNode child : node.getChildren()) {
