@@ -30,6 +30,8 @@ public class Operations {
     /** The editor (read-write) access code – sent back in SESSION_CREATED. */
     public String editorCode;
 
+    public String originalEditorCode;
+
     /** The viewer (read-only) access code – sent back in SESSION_CREATED. */
     public String viewerCode;
 

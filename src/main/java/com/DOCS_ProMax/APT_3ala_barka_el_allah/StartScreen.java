@@ -2,6 +2,7 @@ package com.DOCS_ProMax.APT_3ala_barka_el_allah;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.Color;
 
 public class StartScreen {
 
@@ -38,7 +39,7 @@ public class StartScreen {
         frame.setLocationRelativeTo(null);
 
         JPanel mainPanel = new JPanel();
-        mainPanel.setLayout(new GridLayout(6, 1, 10, 10));
+        mainPanel.setLayout(new GridLayout(7, 1, 10, 10));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
         JLabel titleLabel = new JLabel("Collaborative Editor", SwingConstants.CENTER);
@@ -49,6 +50,7 @@ public class StartScreen {
 
         JButton createButton = new JButton("Create Session");
         JButton joinButton = new JButton("Join Session");
+        JButton myDocsButton = new JButton("My Documents");
 
         statusLabel = new JLabel(" ", SwingConstants.CENTER);
 
@@ -57,6 +59,7 @@ public class StartScreen {
         mainPanel.add(createLabeledField("Session Code:", sessionCodeField));
         mainPanel.add(createButton);
         mainPanel.add(joinButton);
+        mainPanel.add(myDocsButton);
         mainPanel.add(statusLabel);
 
         frame.add(mainPanel);
@@ -64,6 +67,7 @@ public class StartScreen {
 
         createButton.addActionListener(e -> handleCreateSession());
         joinButton.addActionListener(e -> handleJoinSession());
+        myDocsButton.addActionListener(e -> handleMyDocuments());
     }
 
     private JPanel createLabeledField(String labelText, JTextField field) {
@@ -129,6 +133,139 @@ public class StartScreen {
         });
 
         client.joinSession(username, sessionCode);
+    }
+
+    private void handleMyDocuments() {
+        String username = usernameField.getText().trim();
+        if (username.isEmpty()) {
+            statusLabel.setText("Enter your username first.");
+            return;
+        }
+
+        client.setMessageListener(op -> {
+            SwingUtilities.invokeLater(() -> {
+                if ("DOCS_LIST".equals(op.type)) {
+                    showDocumentsDialog(username, op.payload);
+                } else if ("ERROR".equals(op.type)) {
+                    statusLabel.setText(op.payload);
+                }
+            });
+        });
+
+        Operations listOp = new Operations();
+        listOp.type          = "LIST_DOCS";
+        listOp.ownerUsername = username;
+        client.send(listOp.toJson());
+    }
+
+    private void showDocumentsDialog(String username, String jsonPayload) {
+        // Parse the JSON array from the server
+        java.util.List<com.google.gson.JsonObject> docs = new java.util.ArrayList<>();
+        try {
+            com.google.gson.JsonArray arr = com.google.gson.JsonParser.parseString(jsonPayload).getAsJsonArray();
+            for (com.google.gson.JsonElement el : arr) {
+                docs.add(el.getAsJsonObject());
+            }
+        } catch (Exception ex) {
+            statusLabel.setText("Failed to parse documents.");
+            return;
+        }
+
+        JDialog dialog = new JDialog(frame, "My Documents", true);
+        dialog.setSize(480, 350);
+        dialog.setLocationRelativeTo(frame);
+        dialog.setLayout(new BorderLayout());
+
+        if (docs.isEmpty()) {
+            dialog.add(new JLabel("No saved documents found.", SwingConstants.CENTER));
+            dialog.setVisible(true);
+            return;
+        }
+
+        JPanel listPanel = new JPanel();
+        listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
+
+        for (com.google.gson.JsonObject doc : docs) {
+            String editorCode = doc.get("editorCode").getAsString();
+            String viewerCode = doc.get("viewerCode").getAsString();
+
+            JPanel row = new JPanel(new BorderLayout(10, 0));
+            row.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
+
+            JLabel info = new JLabel("Editor: " + editorCode + "   Viewer: " + viewerCode);
+            info.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+
+            JButton openBtn   = new JButton("Open");
+            JButton deleteBtn = new JButton("Delete");
+            deleteBtn.setForeground(Color.RED);
+
+            openBtn.addActionListener(e -> {
+                dialog.dispose();
+
+                client.setMessageListener(op -> SwingUtilities.invokeLater(() -> {
+                    if ("SESSION_CREATED".equals(op.type)) {
+                        // Session created, now load the saved document content
+                        Operations loadOp = new Operations();
+                        loadOp.type        = "LOAD_DOC";
+                        loadOp.sessionCode = editorCode; // the original editor code from MongoDB
+                        client.send(loadOp.toJson());
+
+                    } else if ("DOC_LOADED".equals(op.type)) {
+                        // Content loaded, now open the editor and replay it
+                        CharCRDT crdt = client.getActiveCharCRDT();
+                        if (crdt != null && op.payload != null) {
+                            CharCRDT loaded = CrdtSerializer.fromJson(op.payload, (int)(System.currentTimeMillis() % 100000));
+                            for (CharNode node : loaded.getOrderedNodes()) {
+                                crdt.RemotelyInsertion(node.getID(), node.getParentID(), node.getValue());
+                            }
+                        }
+                        client.setOriginalEditorCode(editorCode);
+                        new EditorUI(username, op.sessionCode != null ? op.sessionCode : client.getSessionCode(), client);
+                        frame.dispose();
+
+                    } else if ("ERROR".equals(op.type)) {
+                        statusLabel.setText(op.payload);
+                    }
+                }));
+
+                client.createSession(username);
+            });
+
+            deleteBtn.addActionListener(e -> {
+                int confirm = JOptionPane.showConfirmDialog(dialog,
+                        "Delete document " + editorCode + "?",
+                        "Confirm", JOptionPane.YES_NO_OPTION);
+                if (confirm == JOptionPane.YES_OPTION) {
+                    Operations delOp = new Operations();
+                    delOp.type        = "DELETE_DOC";
+                    delOp.sessionCode = editorCode;
+                    delOp.username = username;
+                    client.send(delOp.toJson());
+                    dialog.dispose();
+                    statusLabel.setText("Deleted: " + editorCode);
+                }
+            });
+
+            JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+            btns.add(openBtn);
+            btns.add(deleteBtn);
+
+            row.add(info, BorderLayout.CENTER);
+            row.add(btns, BorderLayout.EAST);
+            listPanel.add(row);
+            listPanel.add(new JSeparator());
+        }
+
+        dialog.add(new JScrollPane(listPanel), BorderLayout.CENTER);
+
+        JButton closeBtn = new JButton("Close");
+        closeBtn.addActionListener(e -> dialog.dispose());
+        JPanel south = new JPanel();
+        south.add(closeBtn);
+        dialog.add(south, BorderLayout.SOUTH);
+
+        dialog.setVisible(true);
     }
 
     public static void main(String[] args) {

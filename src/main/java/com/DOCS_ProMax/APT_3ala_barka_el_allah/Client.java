@@ -28,7 +28,8 @@ public class Client extends WebSocketClient {
     private String editorCode;      // same as sessionCode for editors
     private String viewerCode;      // read-only access code
     private String username;
-    private String role;            // "editor" | "viewer"
+    private String role;
+    private String originalEditorCode; // the MongoDB key to save under// "editor" | "viewer"
 
     private MessageListener messageListener;
 
@@ -145,6 +146,7 @@ public class Client extends WebSocketClient {
             case "DOC_LOADED" -> {
                 // A document was loaded or rolled back – the UI layer must re-render
                 System.out.println("[Client] DOC_LOADED received – UI should re-render");
+
             }
 
             case "ERROR" -> System.err.println("[Client] Server error: " + op.payload);
@@ -263,6 +265,7 @@ public class Client extends WebSocketClient {
         op.username    = username;
         op.ownerUsername = username;
         op.payload     = crdtJson;
+        op.originalEditorCode = originalEditorCode; // explicit, dedicated field
         send(op.toJson());
     }
 
@@ -317,4 +320,7 @@ public class Client extends WebSocketClient {
         BlockNode block = localDoc.getBlock(activeBlockID);
         return block != null ? block.getContent() : null;
     }
+
+    public void setOriginalEditorCode(String code) { this.originalEditorCode = code; }
+    public String getOriginalEditorCode() { return originalEditorCode; }
 }

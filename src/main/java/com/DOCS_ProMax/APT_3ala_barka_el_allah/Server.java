@@ -237,8 +237,11 @@ public class Server extends TextWebSocketHandler {
                     String code = sessionManager.getSessionCode(session);
                     if (code == null) { sendError(session, "Not in a session"); return; }
 
-                    // op.payload carries the serialised crdtJson from the client
-                    saveDocument(code, op.ownerUsername, op.payload);
+                    // If client specified an original editor code (reopened from DB), use that instead
+                    String saveCode = (op.originalEditorCode != null && !op.originalEditorCode.isBlank())
+                            ? op.originalEditorCode
+                            : code;
+                    saveDocument(saveCode, op.ownerUsername, op.payload);
 
                     Operations resp = new Operations();
                     resp.type    = "DOC_SAVED";
@@ -286,7 +289,7 @@ public class Server extends TextWebSocketHandler {
                     sendTo(session, resp.toJson());
                 }
 
-                case "DELETE_DOC" -> {
+                /*case "DELETE_DOC" -> {
                     if (documentRepository == null) { sendError(session, "Database not configured"); return; }
                     if (!sessionManager.isEditor(session)) { sendError(session, "Only editors can delete"); return; }
                     if (isBlank(op.sessionCode)) { sendError(session, "Session code required"); return; }
@@ -302,7 +305,31 @@ public class Server extends TextWebSocketHandler {
                     resp.type    = "DOC_DELETED";
                     resp.payload = "Document deleted";
                     sendTo(session, resp.toJson());
+                }*/
+                case "DELETE_DOC" -> {
+                    if (documentRepository == null) { sendError(session, "Database not configured"); return; }
+                    if (isBlank(op.sessionCode)) { sendError(session, "Session code required"); return; }
+                    if (isBlank(op.username)) { sendError(session, "Username required"); return; }
+
+                    Optional<DocumentEntity> found =
+                            documentRepository.findByEditorCode(op.sessionCode.trim().toUpperCase());
+
+                    if (found.isEmpty()) { sendError(session, "Document not found"); return; }
+
+                    if (!op.username.trim().equals(found.get().getOwnerUsername())) {
+                        sendError(session, "Only the document owner can delete");
+                        return;
+                    }
+
+                    documentRepository.delete(found.get());
+
+                    Operations resp = new Operations();
+                    resp.type    = "DOC_DELETED";
+                    resp.payload = "Document deleted";
+                    sendTo(session, resp.toJson());
                 }
+
+
 
                 // ==============================================================
                 // VERSION HISTORY  (Member 1 Bonus)
