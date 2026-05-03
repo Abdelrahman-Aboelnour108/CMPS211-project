@@ -33,6 +33,11 @@ public class Operations {
     public int    endCharUser;
     public long   endCharClock;
 
+    // Target block for MOVE_BLOCK and COPY_BLOCK
+    // (the block after which the moved/copied block is inserted)
+    public int    targetBlockUser;
+    public long   targetBlockClock;
+
     // Split/merge fields
     public long   splitAtIndex;   // cursor index for SPLIT_BLOCK
 

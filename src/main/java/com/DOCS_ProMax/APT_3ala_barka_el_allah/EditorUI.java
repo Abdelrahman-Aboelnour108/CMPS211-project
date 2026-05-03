@@ -960,6 +960,12 @@ public class EditorUI {
         drawRemoteCursors();
     }*/
 
+    // -----------------------------------------------------------------------
+// DROP-IN REPLACEMENT for the onImport() method in EditorUI.java
+// Replace the entire onImport() method with the one below.
+// Everything else in EditorUI.java stays unchanged.
+// -----------------------------------------------------------------------
+
     private void onImport() {
         JFileChooser chooser = new JFileChooser();
         chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Text files (*.txt)", "txt"));
@@ -992,17 +998,36 @@ public class EditorUI {
         progressDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
         progressDialog.setVisible(true);
 
-        // --- SwingWorker does the heavy lifting off the EDT ---
         final String finalContent = content;
+
         SwingWorker<Void, Integer> worker = new SwingWorker<>() {
             @Override
             protected Void doInBackground() {
-                int startIndex = doc.RenderDocument().length();
-                for (int i = 0; i < finalContent.length(); i++) {
-                    CharNode inserted = doc.LocalInsert(finalContent.charAt(i), startIndex + i);
-                    if (inserted != null) client.sendInsertChar(inserted);
-                    publish(i + 1); // report progress
+                // Use BlockCRDT.importText() so that the text is correctly split
+                // into blocks of at most 10 lines each, satisfying the spec requirement
+                // that imported files are converted into the Block CRDT representation.
+                BlockCRDT blockDoc = client.getLocalDoc();
+                List<BlockNode> newBlocks = blockDoc.importText(finalContent);
+
+                int charCount = 0;
+                for (BlockNode block : newBlocks) {
+                    // Broadcast the new block to all collaborators
+                    client.sendInsertBlock(block);
+
+                    // Broadcast every character inside the block
+                    for (CharNode cn : block.getChars()) {
+                        client.sendInsertChar(cn);
+                        publish(++charCount);
+                    }
                 }
+
+                // Update the active block to the last imported block (so the user
+                // can continue typing right after the import).
+                if (!newBlocks.isEmpty()) {
+                    BlockNode lastBlock = newBlocks.get(newBlocks.size() - 1);
+                    client.setActiveBlockID(lastBlock.getId());
+                }
+
                 return null;
             }
 

@@ -160,7 +160,6 @@ public class Client extends WebSocketClient {
             // ------------------------------------------------------------------
 
             case "INSERT_BLOCK" -> {
-                // A new block was inserted by a remote user — create it locally
                 CharCRDT newCRDT = new CharCRDT(op.blockUser, sharedClock);
                 BlockNode newBlock = localDoc.insertTopLevelBlock(newCRDT);
                 System.out.println("[Client] Remote INSERT_BLOCK applied: " + newBlock.getId());
@@ -184,8 +183,35 @@ public class Client extends WebSocketClient {
                 System.out.println("[Client] Remote MERGE_BLOCK applied");
             }
 
-            case "MOVE_BLOCK", "COPY_BLOCK" ->
-                    System.out.println("[Client] Remote " + op.type + " received");
+            case "MOVE_BLOCK" -> {
+                // op.blockUser / op.blockClock identify the source block
+                // op.targetBlockUser / op.targetBlockClock identify the "insert after" anchor
+                BlockID sourceID = new BlockID(op.blockUser, op.blockClock);
+                BlockID afterID  = (op.targetBlockUser != 0 || op.targetBlockClock != 0)
+                        ? new BlockID(op.targetBlockUser, op.targetBlockClock)
+                        : null;
+                BlockNode moved = localDoc.moveBlock(sourceID, afterID);
+                if (moved != null) {
+                    System.out.println("[Client] Remote MOVE_BLOCK applied: new block " + moved.getId());
+                } else {
+                    System.err.println("[Client] Remote MOVE_BLOCK failed for source " + sourceID);
+                }
+            }
+
+            case "COPY_BLOCK" -> {
+                // op.blockUser / op.blockClock identify the source block to copy
+                // op.targetBlockUser / op.targetBlockClock identify the "insert after" anchor
+                BlockID sourceID = new BlockID(op.blockUser, op.blockClock);
+                BlockID afterID  = (op.targetBlockUser != 0 || op.targetBlockClock != 0)
+                        ? new BlockID(op.targetBlockUser, op.targetBlockClock)
+                        : null;
+                BlockNode copied = localDoc.copyBlock(sourceID, afterID);
+                if (copied != null) {
+                    System.out.println("[Client] Remote COPY_BLOCK applied: new block " + copied.getId());
+                } else {
+                    System.err.println("[Client] Remote COPY_BLOCK failed for source " + sourceID);
+                }
+            }
 
             // ------------------------------------------------------------------
             // Document persistence responses
@@ -344,7 +370,7 @@ public class Client extends WebSocketClient {
     }
 
     // -----------------------------------------------------------------------
-    // Block operation senders  ← NEW
+    // Block operation senders
     // -----------------------------------------------------------------------
 
     public void sendInsertBlock(BlockNode block) {
@@ -391,6 +417,44 @@ public class Client extends WebSocketClient {
         op.username    = username;
         op.blockUser   = blockID.getUserID();
         op.blockClock  = blockID.getClock();
+        send(op.toJson());
+    }
+
+    /**
+     * Sends a MOVE_BLOCK message to the server.
+     *
+     * @param blockID      the block to move
+     * @param afterBlockID the block after which to insert it (null = move to top)
+     */
+    public void sendMoveBlock(BlockID blockID, BlockID afterBlockID) {
+        if (!isOpen()) return;
+        Operations op          = new Operations();
+        op.type                = "MOVE_BLOCK";
+        op.sessionCode         = sessionCode;
+        op.username            = username;
+        op.blockUser           = blockID.getUserID();
+        op.blockClock          = blockID.getClock();
+        op.targetBlockUser     = afterBlockID != null ? afterBlockID.getUserID() : 0;
+        op.targetBlockClock    = afterBlockID != null ? afterBlockID.getClock()  : 0;
+        send(op.toJson());
+    }
+
+    /**
+     * Sends a COPY_BLOCK message to the server.
+     *
+     * @param sourceBlockID the block to copy
+     * @param afterBlockID  the block after which the copy is inserted (null = top)
+     */
+    public void sendCopyBlock(BlockID sourceBlockID, BlockID afterBlockID) {
+        if (!isOpen()) return;
+        Operations op          = new Operations();
+        op.type                = "COPY_BLOCK";
+        op.sessionCode         = sessionCode;
+        op.username            = username;
+        op.blockUser           = sourceBlockID.getUserID();
+        op.blockClock          = sourceBlockID.getClock();
+        op.targetBlockUser     = afterBlockID != null ? afterBlockID.getUserID() : 0;
+        op.targetBlockClock    = afterBlockID != null ? afterBlockID.getClock()  : 0;
         send(op.toJson());
     }
 
