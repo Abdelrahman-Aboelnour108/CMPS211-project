@@ -69,6 +69,11 @@ public class DocumentEntity {
      */
     public void snapshotCurrentVersion() {
         if (crdtJson != null && !crdtJson.isBlank()) {
+            // THE FIX: If the current JSON is identical to the most recent snapshot, DO NOT add it!
+            if (!versions.isEmpty() && versions.get(versions.size() - 1).equals(crdtJson)) {
+                return;
+            }
+
             versions.add(crdtJson);
             if (versions.size() > MAX_VERSIONS) {
                 versions.remove(0);           // drop the oldest

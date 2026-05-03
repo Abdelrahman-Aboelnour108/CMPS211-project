@@ -554,6 +554,12 @@ public class Server extends TextWebSocketHandler {
     // Database helpers
     // -----------------------------------------------------------------------
 
+    // -----------------------------------------------------------------------
+    // Database helpers
+    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+    // Database helpers
+    // -----------------------------------------------------------------------
     private void saveDocument(String editorCode, String ownerUsername,
                               String crdtJson, String docName) {
         if (documentRepository == null) return;
@@ -566,17 +572,29 @@ public class Server extends TextWebSocketHandler {
 
         if (existing.isPresent()) {
             doc = existing.get();
-            doc.snapshotCurrentVersion();
+
+            // THE FIX: If nothing changed, skip saving a duplicate version
+            if (crdtJson != null && crdtJson.equals(doc.getCrdtJson())) {
+                if (!isBlank(docName) && !docName.equals(doc.getDocumentName())) {
+                    doc.setDocumentName(docName);
+                    documentRepository.save(doc);
+                }
+                return;
+            }
         } else {
             doc = new DocumentEntity(ownerUsername, editorCode, viewerCode, null);
         }
 
+        // 1. Update the document's current text
         doc.setCrdtJson(crdtJson);
         if (!isBlank(docName)) doc.setDocumentName(docName);
+
+        // 2. Immediately push this new text into the version history list
+        doc.snapshotCurrentVersion();
+
         documentRepository.save(doc);
         System.out.println("[Server] Document saved for session " + editorCode);
     }
-
     // -----------------------------------------------------------------------
     // Relay helpers
     // -----------------------------------------------------------------------
