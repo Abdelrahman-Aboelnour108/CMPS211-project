@@ -814,18 +814,48 @@ public class EditorUI {
     /**
      * Manually splits the active block at the current cursor position.
      */
+    /**
+     * Manually splits the active block at the current cursor position.
+     */
     private void handleManualSplitBlock() {
         BlockID activeBlockID = client.getActiveBlockID();
         if (activeBlockID == null) {
             JOptionPane.showMessageDialog(frame, "No active block."); return;
         }
         int cursorPos = textPane.getCaretPosition();
-        BlockNode newBlock = client.getLocalDoc().splitBlockAtCursor(activeBlockID, cursorPos);
+
+        // THE FIX: Convert the global cursor position into a LOCAL block index
+        int localIndex = 0;
+        int currentCount = 0;
+        for (BlockNode block : client.getLocalDoc().getOrderedNodes()) {
+            if (block.isDeleted() || block.getContent() == null) continue;
+
+            // Count visible characters in this block
+            int visibleInBlock = 0;
+            for (CharNode cn : block.getContent().getOrderedNodes()) {
+                if (!cn.isDeleted()) visibleInBlock++;
+            }
+
+            // If we found the active block, do the math!
+            if (block.getId().equals(activeBlockID)) {
+                localIndex = cursorPos - currentCount;
+                // Clamp it safely so we don't go out of bounds
+                localIndex = Math.max(0, Math.min(localIndex, visibleInBlock));
+                break;
+            }
+            currentCount += visibleInBlock;
+        }
+
+        // Now split using the safe LOCAL index
+        BlockNode newBlock = client.getLocalDoc().splitBlockAtCursor(activeBlockID, localIndex);
         if (newBlock != null) {
-            client.sendSplitBlock(activeBlockID, cursorPos);
+            client.sendSplitBlock(activeBlockID, localIndex);
             client.setActiveBlockID(newBlock.getId());
             renderDocument(cursorPos);
             drawRemoteCursors();
+
+            // Visual confirmation so the user knows it worked!
+            JOptionPane.showMessageDialog(frame, "Block split successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
         } else {
             JOptionPane.showMessageDialog(frame, "Split failed (cursor may already be at block boundary).");
         }
