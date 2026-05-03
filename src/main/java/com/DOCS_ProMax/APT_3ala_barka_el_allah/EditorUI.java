@@ -153,7 +153,49 @@ public class EditorUI {
                     // ---------------------------------------------------------
                     // Rollback: server broadcast DOC_LOADED — re-render
                     // ---------------------------------------------------------
+                    // ---------------------------------------------------------
+                    // Rollback: server broadcast DOC_LOADED — re-render
+                    // ---------------------------------------------------------
                     case "DOC_LOADED" -> {
+                        if (op.payload != null && !op.payload.isBlank()) {
+                            CharCRDT crdt = client.getActiveCharCRDT();
+                            if (crdt != null) {
+                                // 1. Wipe the current screen by marking everything deleted
+                                for (CharNode n : doc.GetVisibleNodes()) {
+                                    n.SetDeleted(true);
+                                }
+
+                                // 2. Unpack the snapshot from the server
+                                CharCRDT loaded = CrdtSerializer.fromJson(
+                                        op.payload,
+                                        (int)(System.currentTimeMillis() % 100000)
+                                );
+
+                                // 3. Sync our local document with the snapshot
+                                for (CharNode loadedNode : loaded.getOrderedNodes()) {
+                                    CharNode existing = crdt.getNode(loadedNode.getID());
+                                    if (existing != null) {
+                                        // If we already know this letter, just undelete it and fix formatting
+                                        existing.SetDeleted(false);
+                                        existing.setBold(loadedNode.isBold());
+                                        existing.setItalic(loadedNode.isItalic());
+                                    } else {
+                                        // If it's a completely new letter from the past, insert it
+                                        CharNode inserted = crdt.RemotelyInsertion(
+                                                loadedNode.getID(),
+                                                loadedNode.getParentID(),
+                                                loadedNode.getValue()
+                                        );
+                                        if (inserted != null) {
+                                            inserted.setBold(loadedNode.isBold());
+                                            inserted.setItalic(loadedNode.isItalic());
+                                            inserted.SetDeleted(false);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // 4. Re-draw the screen with the restored text
                         renderDocument(0);
                         drawRemoteCursors();
                     }
