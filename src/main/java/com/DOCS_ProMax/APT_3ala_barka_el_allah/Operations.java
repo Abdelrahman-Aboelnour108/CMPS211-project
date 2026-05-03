@@ -2,9 +2,6 @@ package com.DOCS_ProMax.APT_3ala_barka_el_allah;
 
 import com.google.gson.Gson;
 
-/**
- * Wire-format message used between Client and Server over WebSocket.
- */
 public class Operations {
 
     // Core fields
@@ -34,12 +31,11 @@ public class Operations {
     public long   endCharClock;
 
     // Target block for MOVE_BLOCK and COPY_BLOCK
-    // (the block after which the moved/copied block is inserted)
     public int    targetBlockUser;
     public long   targetBlockClock;
 
     // Split/merge fields
-    public long   splitAtIndex;   // cursor index for SPLIT_BLOCK
+    public long   splitAtIndex;
 
     // Formatting fields
     public boolean isBold;
@@ -60,7 +56,9 @@ public class Operations {
     public String commentId;
     public String commentText;
 
-    // Serialisation
+    // Block snapshot for undo/redo (JSON of CharCRDT)
+    public String blockSnapshot;
+
     public String toJson() {
         return new Gson().toJson(this);
     }

@@ -219,11 +219,12 @@ public class UndoRedoManager {
                 inv.blockClock = original.blockClock;
             }
             case "DELETE_BLOCK" -> {
-                inv.type            = "INSERT_BLOCK";
-                inv.blockUser       = original.blockUser;
-                inv.blockClock      = original.blockClock;
+                inv.type = "INSERT_BLOCK";
+                inv.blockUser = original.blockUser;
+                inv.blockClock = original.blockClock;
                 inv.parentBlockUser = original.parentBlockUser;
                 inv.parentBlockClock = original.parentBlockClock;
+                inv.blockSnapshot = original.blockSnapshot;  // crucial: carry the content
             }
             default -> {
                 return copyWithUsername(original, username);
@@ -248,6 +249,7 @@ public class UndoRedoManager {
         copy.blockClock       = src.blockClock;
         copy.parentBlockUser  = src.parentBlockUser;
         copy.parentBlockClock = src.parentBlockClock;
+        copy.blockSnapshot = src.blockSnapshot;
         return copy;
     }
 

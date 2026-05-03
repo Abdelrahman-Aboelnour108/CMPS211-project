@@ -204,15 +204,17 @@ public class Client extends WebSocketClient {
             }
 
             case "MOVE_BLOCK" -> {
-                // op.blockUser / op.blockClock identify the source block
-                // op.targetBlockUser / op.targetBlockClock identify the "insert after" anchor
                 BlockID sourceID = new BlockID(op.blockUser, op.blockClock);
                 BlockID afterID  = (op.targetBlockUser != 0 || op.targetBlockClock != 0)
                         ? new BlockID(op.targetBlockUser, op.targetBlockClock)
                         : null;
                 BlockNode moved = localDoc.moveBlock(sourceID, afterID);
                 if (moved != null) {
-                    System.out.println("[Client] Remote MOVE_BLOCK applied: new block " + moved.getId());
+                    System.out.println("[Client] Remote MOVE_BLOCK applied: block " + moved.getId());
+                    // If the moved block is the one we were editing, update our active reference
+                    if (activeBlockID != null && activeBlockID.equals(sourceID)) {
+                        activeBlockID = moved.getId();
+                    }
                 } else {
                     System.err.println("[Client] Remote MOVE_BLOCK failed for source " + sourceID);
                 }
@@ -395,25 +397,30 @@ public class Client extends WebSocketClient {
 
     public void sendInsertBlock(BlockNode block) {
         if (!isOpen()) return;
-        Operations op       = new Operations();
-        op.type             = "INSERT_BLOCK";
-        op.sessionCode      = sessionCode;
-        op.username         = username;
-        op.blockUser        = block.getId().getUserID();
-        op.blockClock       = block.getId().getClock();
-        op.parentBlockUser  = block.getParentID() != null ? block.getParentID().getUserID() : -1;
-        op.parentBlockClock = block.getParentID() != null ? block.getParentID().getClock()  : -1;
+        Operations op = new Operations();
+        op.type = "INSERT_BLOCK";
+        op.sessionCode = sessionCode;
+        op.username = username;
+        op.blockUser = block.getId().getUserID();
+        op.blockClock = block.getId().getClock();
+        op.parentBlockUser = block.getParentID() != null ? block.getParentID().getUserID() : -1;
+        op.parentBlockClock = block.getParentID() != null ? block.getParentID().getClock() : -1;
+        // Capture snapshot of the block's CharCRDT for undo/redo
+        if (block.getContent() != null) {
+            op.blockSnapshot = CrdtSerializer.toJson(block.getContent());
+        }
         send(op.toJson());
     }
-
     public void sendDeleteBlock(BlockID blockID) {
-        if (!isOpen()) return;
-        Operations op  = new Operations();
-        op.type        = "DELETE_BLOCK";
+        BlockNode block = localDoc.getBlock(blockID);
+        String snapshot = (block != null && block.getContent() != null) ? CrdtSerializer.toJson(block.getContent()) : null;
+        Operations op = new Operations();
+        op.type = "DELETE_BLOCK";
         op.sessionCode = sessionCode;
-        op.username    = username;
-        op.blockUser   = blockID.getUserID();
-        op.blockClock  = blockID.getClock();
+        op.username = username;
+        op.blockUser = blockID.getUserID();
+        op.blockClock = blockID.getClock();
+        op.blockSnapshot = snapshot;
         send(op.toJson());
     }
 

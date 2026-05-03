@@ -23,7 +23,13 @@ public class BlockCRDT {
         this.root = new BlockNode(ROOT_ID, null, null);
         nodeMap.put(ROOT_ID, root);
     }
+    public int getUserid() {
+        return userid;
+    }
 
+    public Clock getClock() {
+        return clock;
+    }
 
     public void insertBlock(BlockID parentID, CharCRDT content) {
         BlockNode parentNode = getNode(parentID);
@@ -165,29 +171,43 @@ public class BlockCRDT {
         BlockNode sourceNode = getNode(blockID);
         if (isblockEmpty(sourceNode)) return null;
 
-        // Determine the parent of the insertion point
-        BlockNode referenceNode = afterBlockID != null ? getNode(afterBlockID) : null;
-        BlockID parentID = (referenceNode != null && !referenceNode.isDeleted())
-                ? referenceNode.getParentID()
-                : ROOT_ID;
+        BlockNode oldParent = getNode(sourceNode.getParentID());
+        if (oldParent == null) return null;
 
-        BlockNode parentNode = getNode(parentID);
-        if (parentNode == null) parentNode = root;
+        // 1. Remove from current parent
+        oldParent.getChildren().remove(sourceNode);
 
-        // Create new block and copy all chars from source
-        BlockNode newBlock = createNode(parentNode.getId(), new CharCRDT(this.userid, this.clock));
-        parentNode.addChild(newBlock);
-
-        boolean copied = sourceNode.moveAllText(newBlock);
-        if (!copied) {
-            // Rollback: tombstone the new empty block
-            newBlock.setDeleted(true);
-            return null;
+        // 2. Determine new parent and insertion index
+        BlockNode newParent;
+        int insertIndex;
+        if (afterBlockID == null) {
+            // Move to top of root
+            newParent = root;
+            insertIndex = 0;
+        } else {
+            BlockNode afterNode = getNode(afterBlockID);
+            if (afterNode == null) {
+                // fallback: put back where it was?
+                oldParent.getChildren().add(sourceNode);
+                return null;
+            }
+            newParent = getNode(afterNode.getParentID());
+            if (newParent == null) newParent = root;
+            // Find index of afterNode in newParent's children
+            int afterIdx = newParent.getChildren().indexOf(afterNode);
+            if (afterIdx == -1) {
+                oldParent.getChildren().add(sourceNode);
+                return null;
+            }
+            insertIndex = afterIdx + 1;
         }
 
-        // Tombstone the original block (CRDT — never truly deleted)
-        sourceNode.setDeleted(true);
-        return newBlock;
+        // 3. Insert into new parent at correct position
+        newParent.getChildren().add(insertIndex, sourceNode);
+        // 4. Re-sort (but insertion order already correct, just keep CRDT order)
+        newParent.getChildren().sort((a, b) -> a.getId().compareTo(b.getId()));
+
+        return sourceNode;  // same ID, just relocated
     }
 
     // -----------------------------------------------------------------------
