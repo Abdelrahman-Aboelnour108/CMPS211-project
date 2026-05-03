@@ -80,6 +80,9 @@ public class CrdtSerializer {
     // -----------------------------------------------------------------------
     // Deserialise
     // -----------------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // Deserialise
+    // -----------------------------------------------------------------------
     public static CharCRDT fromJson(String json, int userId) {
         if (json == null || json.isBlank()) return new CharCRDT(userId);
         Type listType = new TypeToken<List<NodeDto>>() {
