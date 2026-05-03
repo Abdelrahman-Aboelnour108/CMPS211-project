@@ -145,11 +145,12 @@ public class EditorUI {
                         }
                     }
 
-                    // ---------------------------------------------------------
+// ---------------------------------------------------------
                     // Version history: server sent back the list of snapshots
                     // ---------------------------------------------------------
-                    case "VERSIONS_LIST" -> showVersionsDialog(op.payload);
-
+                    case "VERSIONS_LIST" -> {
+                        showVersionsDialog(op.payload);
+                    }
                     // ---------------------------------------------------------
                     // Rollback: server broadcast DOC_LOADED — re-render
                     // ---------------------------------------------------------
@@ -195,6 +196,9 @@ public class EditorUI {
                         renderDocument(0);
                         drawRemoteCursors();
                     }
+                    // ---------------------------------------------------------
+                    // Version history: server sent back the list of snapshots
+                    // ---------------------------------------------------------
                     // ---------------------------------------------------------
                     // Block ops from remote peers — re-render
                     // ---------------------------------------------------------
