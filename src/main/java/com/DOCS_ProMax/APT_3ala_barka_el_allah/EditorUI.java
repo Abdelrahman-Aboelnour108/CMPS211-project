@@ -356,8 +356,13 @@ public class EditorUI {
         // -----------------------------------------------------------------------
         textPane = new JTextPane();
         textPane.setEditable(client.isEditor());
-        textPane.addCaretListener(e -> { if (client != null) client.sendCursor(textPane.getCaretPosition()); });
-
+        textPane.addCaretListener(e -> {
+            if (client != null) {
+                int pos = textPane.getCaretPosition();
+                client.sendCursor(pos);
+                updateActiveBlockFromCursor(pos); // <-- ADD THIS
+            }
+        });
         highlighter = textPane.getHighlighter();
 
         // Context menu — comments + block operations
@@ -949,7 +954,30 @@ public class EditorUI {
     // =========================================================================
     // Helpers
     // =========================================================================
+    /**
+     * Maps the Swing JTextPane cursor index to the underlying BlockCRDT ID.
+     */
+    private void updateActiveBlockFromCursor(int cursorPos) {
+        int currentCount = 0;
 
+        for (BlockNode block : client.getLocalDoc().getOrderedNodes()) {
+            if (block.isDeleted() || block.getContent() == null) continue;
+
+            // Count how many visible characters are inside this specific block
+            int visibleInBlock = 0;
+            for (CharNode cn : block.getContent().getOrderedNodes()) {
+                if (!cn.isDeleted()) visibleInBlock++;
+            }
+
+            currentCount += visibleInBlock;
+
+            // If the cursor falls within this block's text range, mark it as active!
+            if (cursorPos <= currentCount || visibleInBlock == 0) {
+                client.setActiveBlockID(block.getId());
+                return;
+            }
+        }
+    }
     private JButton makeToolbarButton(String text, Font font, Insets margin) {
         JButton btn = new JButton(text);
         btn.setFont(font);
