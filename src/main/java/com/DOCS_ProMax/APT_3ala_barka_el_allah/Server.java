@@ -573,23 +573,24 @@ public class Server extends TextWebSocketHandler {
         if (existing.isPresent()) {
             doc = existing.get();
 
-            // THE FIX: If the new JSON is exactly the same as the current database JSON, skip the save!
+            // THE FIX: If nothing changed, skip saving a duplicate version
             if (crdtJson != null && crdtJson.equals(doc.getCrdtJson())) {
-                // We still update the document name if they renamed it, but we skip versioning
-                if (!isBlank(docName)) {
+                if (!isBlank(docName) && !docName.equals(doc.getDocumentName())) {
                     doc.setDocumentName(docName);
                     documentRepository.save(doc);
                 }
                 return;
             }
-
-            doc.snapshotCurrentVersion();
         } else {
             doc = new DocumentEntity(ownerUsername, editorCode, viewerCode, null);
         }
 
+        // 1. Update the document's current text
         doc.setCrdtJson(crdtJson);
         if (!isBlank(docName)) doc.setDocumentName(docName);
+
+        // 2. Immediately push this new text into the version history list
+        doc.snapshotCurrentVersion();
 
         documentRepository.save(doc);
         System.out.println("[Server] Document saved for session " + editorCode);
