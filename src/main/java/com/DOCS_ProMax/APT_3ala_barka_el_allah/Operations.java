@@ -62,6 +62,11 @@ public class Operations {
     public int  insertPosition;   // for MOVE_BLOCK_EXEC: exact index in children list
     public boolean isMoveOp;      // marks INSERT_BLOCK as part of a move (skip merge on delete)
 
+    // ADD these two fields to Operations.java
+    public int  anchorBlockUser;   // ID of block that moved block goes AFTER (-1/-1 = insert at top)
+    public long anchorBlockClock;
+
+
     public String toJson() {
         return new Gson().toJson(this);
     }

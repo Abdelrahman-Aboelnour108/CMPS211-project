@@ -681,6 +681,8 @@ public class EditorUI {
 // ── FILE: EditorUI.java ───────────────────────────────────────────────────
 // REPLACE handleMoveBlock() entirely
 
+// REPLACE handleMoveBlock() entirely in EditorUI.java
+
     private void handleMoveBlock(int direction) {
         BlockID activeBlockID = client.getActiveBlockID();
         if (activeBlockID == null) {
@@ -692,10 +694,12 @@ public class EditorUI {
         List<BlockNode> ordered = blockDoc.getOrderedNodes();
         if (ordered.isEmpty()) return;
 
+        // Find current index in live (non-deleted) list
         int currentIdx = -1;
         for (int i = 0; i < ordered.size(); i++) {
             if (ordered.get(i).getId().equals(activeBlockID)) {
-                currentIdx = i; break;
+                currentIdx = i;
+                break;
             }
         }
         if (currentIdx == -1) {
@@ -705,25 +709,45 @@ public class EditorUI {
 
         int targetIdx = currentIdx + direction;
         if (targetIdx < 0) {
-            JOptionPane.showMessageDialog(frame, "Already at top."); return;
+            JOptionPane.showMessageDialog(frame, "Already at top.");
+            return;
         }
         if (targetIdx >= ordered.size()) {
-            JOptionPane.showMessageDialog(frame, "Already at bottom."); return;
+            JOptionPane.showMessageDialog(frame, "Already at bottom.");
+            return;
         }
 
         BlockNode sourceBlock     = ordered.get(currentIdx);
         BlockNode targetLiveBlock = ordered.get(targetIdx);
 
-        // Find raw insert position
-        List<BlockNode> rawChildren = blockDoc.getRootChildren();
-        int rawTargetIdx = rawChildren.indexOf(targetLiveBlock);
-        if (rawTargetIdx == -1) {
-            JOptionPane.showMessageDialog(frame, "Move failed: target not found.");
-            return;
+        // -----------------------------------------------------------------------
+        // Determine anchor: the live block that the moved block will go AFTER.
+        // anchor == null means "insert at very top".
+        //
+        // Moving UP   (direction == -1):
+        //   The moved block lands before targetLiveBlock.
+        //   anchor = the live block just before targetLiveBlock, or null if none.
+        //
+        // Moving DOWN (direction == +1):
+        //   The moved block lands after targetLiveBlock.
+        //   anchor = targetLiveBlock itself.
+        // -----------------------------------------------------------------------
+        BlockID anchorID;
+        if (direction == -1) {
+            // Moving up: anchor is the live block before targetLiveBlock
+            if (targetIdx == 0) {
+                anchorID = null; // goes to very top
+            } else {
+                anchorID = ordered.get(targetIdx - 1).getId();
+            }
+        } else {
+            // Moving down: anchor is targetLiveBlock
+            anchorID = targetLiveBlock.getId();
         }
-        int insertPos = (direction == 1) ? rawTargetIdx + 1 : rawTargetIdx;
 
-        // Build fresh content copy
+        // -----------------------------------------------------------------------
+        // Build fresh content copy with new char IDs
+        // -----------------------------------------------------------------------
         CharCRDT newContent = new CharCRDT(blockDoc.getUserid(), blockDoc.getClock());
         CharID lastParentID = newContent.rootID;
         for (CharNode cn : sourceBlock.getChars()) {
@@ -735,19 +759,38 @@ public class EditorUI {
             }
         }
 
-        // Insert locally at exact position
-        BlockNode movedBlock = blockDoc.insertBlockAtPosition(
-                null, newContent, insertPos);
-        if (movedBlock == null) {
-            JOptionPane.showMessageDialog(frame, "Move failed."); return;
+        // -----------------------------------------------------------------------
+        // Compute local insert position from anchor
+        // -----------------------------------------------------------------------
+        List<BlockNode> rawChildren = blockDoc.getRootChildren();
+        int insertPos;
+        if (anchorID == null) {
+            insertPos = 0;
+        } else {
+            BlockNode anchorBlock = blockDoc.getBlock(anchorID);
+            int rawAnchorIdx = rawChildren.indexOf(anchorBlock);
+            insertPos = (rawAnchorIdx == -1) ? rawChildren.size() : rawAnchorIdx + 1;
         }
 
-        // Soft-delete original locally (no merge side effects)
+        // -----------------------------------------------------------------------
+        // Insert new block locally at computed position
+        // -----------------------------------------------------------------------
+        BlockNode movedBlock = blockDoc.insertBlockAtPosition(null, newContent, insertPos);
+        if (movedBlock == null) {
+            JOptionPane.showMessageDialog(frame, "Move failed.");
+            return;
+        }
+
+        // -----------------------------------------------------------------------
+        // Soft-delete the original block (no merge side effects)
+        // -----------------------------------------------------------------------
         blockDoc.softDeleteNode(activeBlockID);
 
-        // Send ONE atomic message — remote peers replay identically
+        // -----------------------------------------------------------------------
+        // Send ONE atomic message so remote peers replay identically using anchor
+        // -----------------------------------------------------------------------
         client.sendBeginGroup();
-        client.sendMoveBlockExec(movedBlock, insertPos, activeBlockID);
+        client.sendMoveBlockExec(movedBlock, anchorID, activeBlockID);
         client.sendEndGroup();
 
         client.setActiveBlockID(movedBlock.getId());
@@ -758,7 +801,6 @@ public class EditorUI {
             updateRemoteCursorDisplay();
         });
     }
-
     private void handleCopyBlock() {
         BlockID activeBlockID = client.getActiveBlockID();
         if (activeBlockID == null) {
@@ -831,9 +873,11 @@ public class EditorUI {
             JOptionPane.showMessageDialog(frame, "Paste failed."); return;
         }
 
-        // Send ONE atomic message — no ghost chars on remote peers
+        BlockID anchorID = (activeBlock != null && !activeBlock.isDeleted())
+                ? activeBlockID : null;
+
         client.sendBeginGroup();
-        client.sendMoveBlockExec(pastedBlock, insertPos, null);
+        client.sendMoveBlockExec(pastedBlock, anchorID, null);
         client.sendEndGroup();
 
         client.setActiveBlockID(pastedBlock.getId());

@@ -5,6 +5,7 @@ import org.java_websocket.handshake.ServerHandshake;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -323,7 +324,7 @@ public class Client extends WebSocketClient {
             case "MOVE_BLOCK_EXEC" -> {
                 sharedClock.advanceTo(op.blockClock);
 
-                // 1. Soft-delete the original if one was specified (move, not paste)
+                // 1. Soft-delete the original block if this is a move (not a paste)
                 if (op.targetBlockUser != -1 || op.targetBlockClock != -1) {
                     BlockID oldBlockID = new BlockID(op.targetBlockUser, op.targetBlockClock);
                     BlockNode oldBlock = localDoc.getBlock(oldBlockID);
@@ -334,7 +335,6 @@ public class Client extends WebSocketClient {
                             }
                         }
                         oldBlock.setDeleted(true);
-                        // No checkAndSplit_Merge — prevents ghost chars
                     }
                 }
 
@@ -347,13 +347,31 @@ public class Client extends WebSocketClient {
                     newCRDT = new CharCRDT(op.blockUser, sharedClock);
                 }
 
-                // 3. Insert at the exact position — same index as the sender used
+                // 3. Find insert position from anchor ID (stable across peers)
+                int insertPos;
+                if (op.anchorBlockUser == -1 && op.anchorBlockClock == -1) {
+                    // No anchor = insert at very top
+                    insertPos = 0;
+                } else {
+                    BlockID anchorID = new BlockID(op.anchorBlockUser, op.anchorBlockClock);
+                    BlockNode anchorBlock = localDoc.getBlock(anchorID);
+                    if (anchorBlock == null) {
+                        insertPos = localDoc.getRootChildren().size();
+                    } else {
+                        List<BlockNode> rawChildren = localDoc.getRootChildren();
+                        int anchorIdx = rawChildren.indexOf(anchorBlock);
+                        insertPos = (anchorIdx == -1) ? rawChildren.size() : anchorIdx + 1;
+                    }
+                }
+
+                // 4. Insert at anchor-derived position
                 BlockNode newBlock = localDoc.insertBlockAtPosition(
-                        null, newCRDT, op.insertPosition, newBlockID);
+                        null, newCRDT, insertPos, newBlockID);
 
                 if (newBlock != null) {
                     System.out.println("[Client] MOVE_BLOCK_EXEC: new=" + newBlockID
-                            + " pos=" + op.insertPosition);
+                            + " anchor=(" + op.anchorBlockUser + "," + op.anchorBlockClock + ")"
+                            + " pos=" + insertPos);
                 } else {
                     System.err.println("[Client] MOVE_BLOCK_EXEC failed: " + newBlockID);
                 }
@@ -726,7 +744,8 @@ public class Client extends WebSocketClient {
 // ── FILE: Client.java ────────────────────────────────────────────────────
 // REPLACE sendMoveBlockExec() entirely
 
-    public void sendMoveBlockExec(BlockNode newBlock, int insertPosition,
+    // REPLACE sendMoveBlockExec() in Client.java
+    public void sendMoveBlockExec(BlockNode newBlock, BlockID anchorBlockID,
                                   BlockID deletedBlockID) {
         if (!isOpen()) return;
         Operations op       = new Operations();
@@ -739,8 +758,10 @@ public class Client extends WebSocketClient {
                 ? newBlock.getParentID().getUserID()  : -1;
         op.parentBlockClock = newBlock.getParentID() != null
                 ? newBlock.getParentID().getClock()   : -1;
-        op.insertPosition   = insertPosition;
-        // deletedBlockID is null for paste (no original to remove)
+        // Anchor: block that the moved block goes AFTER (null = insert at top)
+        op.anchorBlockUser  = (anchorBlockID != null) ? anchorBlockID.getUserID()  : -1;
+        op.anchorBlockClock = (anchorBlockID != null) ? anchorBlockID.getClock()   : -1;
+        // Deleted block (-1/-1 means paste, no deletion)
         op.targetBlockUser  = (deletedBlockID != null)
                 ? deletedBlockID.getUserID()  : -1;
         op.targetBlockClock = (deletedBlockID != null)
