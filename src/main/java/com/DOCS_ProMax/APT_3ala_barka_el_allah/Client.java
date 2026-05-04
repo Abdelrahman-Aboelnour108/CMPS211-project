@@ -320,7 +320,44 @@ public class Client extends WebSocketClient {
                     System.err.println("[Client] Remote COPY_BLOCK failed for source " + sourceID);
                 }
             }
+            case "MOVE_BLOCK_EXEC" -> {
+                sharedClock.advanceTo(op.blockClock);
 
+                // 1. Soft-delete the original if one was specified (move, not paste)
+                if (op.targetBlockUser != -1 || op.targetBlockClock != -1) {
+                    BlockID oldBlockID = new BlockID(op.targetBlockUser, op.targetBlockClock);
+                    BlockNode oldBlock = localDoc.getBlock(oldBlockID);
+                    if (oldBlock != null && !oldBlock.isDeleted()) {
+                        if (oldBlock.getContent() != null) {
+                            for (CharNode cn : oldBlock.getContent().getOrderedNodes()) {
+                                cn.SetDeleted(true);
+                            }
+                        }
+                        oldBlock.setDeleted(true);
+                        // No checkAndSplit_Merge — prevents ghost chars
+                    }
+                }
+
+                // 2. Rebuild the new block with the exact same ID
+                BlockID newBlockID = new BlockID(op.blockUser, op.blockClock);
+                CharCRDT newCRDT;
+                if (op.blockSnapshot != null && !op.blockSnapshot.isBlank()) {
+                    newCRDT = CrdtSerializer.fromJson(op.blockSnapshot, op.blockUser);
+                } else {
+                    newCRDT = new CharCRDT(op.blockUser, sharedClock);
+                }
+
+                // 3. Insert at the exact position — same index as the sender used
+                BlockNode newBlock = localDoc.insertBlockAtPosition(
+                        null, newCRDT, op.insertPosition, newBlockID);
+
+                if (newBlock != null) {
+                    System.out.println("[Client] MOVE_BLOCK_EXEC: new=" + newBlockID
+                            + " pos=" + op.insertPosition);
+                } else {
+                    System.err.println("[Client] MOVE_BLOCK_EXEC failed: " + newBlockID);
+                }
+            }
             // ------------------------------------------------------------------
             // Document persistence responses
             // ------------------------------------------------------------------
@@ -686,7 +723,33 @@ public class Client extends WebSocketClient {
             System.err.println("[Client] Network transmission aborted: WebSocket is disconnected.");
         }
     }
+// ── FILE: Client.java ────────────────────────────────────────────────────
+// REPLACE sendMoveBlockExec() entirely
 
+    public void sendMoveBlockExec(BlockNode newBlock, int insertPosition,
+                                  BlockID deletedBlockID) {
+        if (!isOpen()) return;
+        Operations op       = new Operations();
+        op.type             = "MOVE_BLOCK_EXEC";
+        op.sessionCode      = sessionCode;
+        op.username         = username;
+        op.blockUser        = newBlock.getId().getUserID();
+        op.blockClock       = newBlock.getId().getClock();
+        op.parentBlockUser  = newBlock.getParentID() != null
+                ? newBlock.getParentID().getUserID()  : -1;
+        op.parentBlockClock = newBlock.getParentID() != null
+                ? newBlock.getParentID().getClock()   : -1;
+        op.insertPosition   = insertPosition;
+        // deletedBlockID is null for paste (no original to remove)
+        op.targetBlockUser  = (deletedBlockID != null)
+                ? deletedBlockID.getUserID()  : -1;
+        op.targetBlockClock = (deletedBlockID != null)
+                ? deletedBlockID.getClock()   : -1;
+        if (newBlock.getContent() != null) {
+            op.blockSnapshot = CrdtSerializer.toJson(newBlock.getContent());
+        }
+        send(op.toJson());
+    }
     // ── FILE: Client.java ────────────────────────────────────────────────────
 // ADD these two methods
 
@@ -731,4 +794,5 @@ public class Client extends WebSocketClient {
 
     public BlockCRDT getLocalDoc()    { return localDoc; }
     public BlockID   getActiveBlockID() { return activeBlockID; }
+
 }

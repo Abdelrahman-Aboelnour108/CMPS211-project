@@ -678,6 +678,9 @@ public class EditorUI {
 // ── FILE: EditorUI.java ───────────────────────────────────────────────────
 // REPLACE handleMoveBlock() entirely
 
+// ── FILE: EditorUI.java ───────────────────────────────────────────────────
+// REPLACE handleMoveBlock() entirely
+
     private void handleMoveBlock(int direction) {
         BlockID activeBlockID = client.getActiveBlockID();
         if (activeBlockID == null) {
@@ -696,7 +699,7 @@ public class EditorUI {
             }
         }
         if (currentIdx == -1) {
-            JOptionPane.showMessageDialog(frame, "Could not locate the current block.");
+            JOptionPane.showMessageDialog(frame, "Could not locate block.");
             return;
         }
 
@@ -708,8 +711,19 @@ public class EditorUI {
             JOptionPane.showMessageDialog(frame, "Already at bottom."); return;
         }
 
-        BlockNode sourceBlock = ordered.get(currentIdx);
+        BlockNode sourceBlock     = ordered.get(currentIdx);
+        BlockNode targetLiveBlock = ordered.get(targetIdx);
 
+        // Find raw insert position
+        List<BlockNode> rawChildren = blockDoc.getRootChildren();
+        int rawTargetIdx = rawChildren.indexOf(targetLiveBlock);
+        if (rawTargetIdx == -1) {
+            JOptionPane.showMessageDialog(frame, "Move failed: target not found.");
+            return;
+        }
+        int insertPos = (direction == 1) ? rawTargetIdx + 1 : rawTargetIdx;
+
+        // Build fresh content copy
         CharCRDT newContent = new CharCRDT(blockDoc.getUserid(), blockDoc.getClock());
         CharID lastParentID = newContent.rootID;
         for (CharNode cn : sourceBlock.getChars()) {
@@ -721,32 +735,21 @@ public class EditorUI {
             }
         }
 
-        List<BlockNode> rawChildren = blockDoc.getRootChildren();
-        BlockNode targetLiveBlock   = ordered.get(targetIdx);
-        int rawTargetIdx = rawChildren.indexOf(targetLiveBlock);
-        if (rawTargetIdx == -1) {
-            JOptionPane.showMessageDialog(frame, "Move failed: target not found.");
-            return;
-        }
-
-        int insertPos = (direction == 1) ? rawTargetIdx + 1 : rawTargetIdx;
-
-        BlockNode movedBlock = blockDoc.insertBlockAtPosition(null, newContent, insertPos);
+        // Insert locally at exact position
+        BlockNode movedBlock = blockDoc.insertBlockAtPosition(
+                null, newContent, insertPos);
         if (movedBlock == null) {
-            JOptionPane.showMessageDialog(frame, "Move failed.");
-            return;
+            JOptionPane.showMessageDialog(frame, "Move failed."); return;
         }
 
-        // Wrap all move ops as one atomic undo group
+        // Soft-delete original locally (no merge side effects)
+        blockDoc.softDeleteNode(activeBlockID);
+
+        // Send ONE atomic message — remote peers replay identically
         client.sendBeginGroup();
-        client.sendInsertBlock(movedBlock);
-        for (CharNode cn : movedBlock.getChars()) {
-            client.sendInsertChar(cn);
-        }
-        client.sendDeleteBlock(activeBlockID);
+        client.sendMoveBlockExec(movedBlock, insertPos, activeBlockID);
         client.sendEndGroup();
 
-        blockDoc.softDeleteNode(activeBlockID);
         client.setActiveBlockID(movedBlock.getId());
 
         SwingUtilities.invokeLater(() -> {
@@ -776,30 +779,27 @@ public class EditorUI {
     // ── FILE: EditorUI.java ───────────────────────────────────────────────────
 // 7. ADD this new method handlePasteBlock() anywhere in the private methods section
 
+// ── FILE: EditorUI.java ───────────────────────────────────────────────────
+// REPLACE handlePasteBlock() entirely
+
     private void handlePasteBlock() {
         if (copiedBlockID == null) {
             JOptionPane.showMessageDialog(frame,
-                    "No block copied yet. Right-click a block and choose 'Copy Block' first.");
+                    "No block copied. Right-click and choose 'Copy Block' first.");
             return;
         }
 
         BlockCRDT blockDoc = client.getLocalDoc();
-
-        // Verify the source block still exists and is not deleted
         BlockNode sourceBlock = blockDoc.getBlock(copiedBlockID);
         if (sourceBlock == null || sourceBlock.isDeleted()
                 || sourceBlock.getContent() == null) {
-            JOptionPane.showMessageDialog(frame,
-                    "The copied block no longer exists.");
+            JOptionPane.showMessageDialog(frame, "Copied block no longer exists.");
             copiedBlockID = null;
             return;
         }
 
-        // Paste after the currently active block
-        BlockID activeBlockID = client.getActiveBlockID();
-        List<BlockNode> ordered = blockDoc.getOrderedNodes();
-
-        // Find insertion position: after active block in raw children list
+        // Find insertion position: after active block in raw list
+        BlockID   activeBlockID = client.getActiveBlockID();
         List<BlockNode> rawChildren = blockDoc.getRootChildren();
         BlockNode activeBlock = (activeBlockID != null)
                 ? blockDoc.getBlock(activeBlockID) : null;
@@ -807,12 +807,12 @@ public class EditorUI {
         int insertPos;
         if (activeBlock != null && !activeBlock.isDeleted()) {
             int rawIdx = rawChildren.indexOf(activeBlock);
-            insertPos = (rawIdx == -1) ? rawChildren.size() : rawIdx + 1;
+            insertPos  = (rawIdx == -1) ? rawChildren.size() : rawIdx + 1;
         } else {
-            insertPos = rawChildren.size(); // append at end
+            insertPos = rawChildren.size();
         }
 
-        // Build fresh CharCRDT copying source content with new IDs
+        // Build fresh content with new IDs
         CharCRDT newContent = new CharCRDT(blockDoc.getUserid(), blockDoc.getClock());
         CharID lastParentID = newContent.rootID;
         for (CharNode cn : sourceBlock.getChars()) {
@@ -824,22 +824,18 @@ public class EditorUI {
             }
         }
 
-        // Insert at exact position (no sort)
-        BlockNode pastedBlock = blockDoc.insertBlockAtPosition(null, newContent, insertPos);
+        // Insert locally
+        BlockNode pastedBlock = blockDoc.insertBlockAtPosition(
+                null, newContent, insertPos);
         if (pastedBlock == null) {
-            JOptionPane.showMessageDialog(frame, "Paste failed.");
-            return;
+            JOptionPane.showMessageDialog(frame, "Paste failed."); return;
         }
 
-        // Broadcast as atomic group so undo works in one keypress
+        // Send ONE atomic message — no ghost chars on remote peers
         client.sendBeginGroup();
-        client.sendInsertBlock(pastedBlock);
-        for (CharNode cn : pastedBlock.getChars()) {
-            client.sendInsertChar(cn);
-        }
+        client.sendMoveBlockExec(pastedBlock, insertPos, null);
         client.sendEndGroup();
 
-        // Update active block to the pasted one
         client.setActiveBlockID(pastedBlock.getId());
 
         SwingUtilities.invokeLater(() -> {
@@ -848,7 +844,6 @@ public class EditorUI {
             updateRemoteCursorDisplay();
         });
     }
-
     // -------------------------------------------------------------------------
     // FIX: handleManualSplitBlock
     // Uses sendSplitBlock(blockID, newBlock, localIndex) so every remote peer

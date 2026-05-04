@@ -230,18 +230,27 @@ public class BlockCRDT {
 
         return splitBlock(sourceNode, localIndex);
     }
-    public BlockNode insertBlockAtPosition(BlockID parentID, CharCRDT content, int position) {
+    public BlockNode insertBlockAtPosition(BlockID parentID, CharCRDT content,int position) {
+        return insertBlockAtPosition(parentID, content, position, null);
+    }
+
+    public BlockNode insertBlockAtPosition(BlockID parentID, CharCRDT content,
+                                           int position, BlockID explicitID) {
         BlockID   normalizedParent = normalizeParentID(parentID);
         BlockNode parentNode       = getNode(normalizedParent);
         if (parentNode == null) parentNode = root;
 
-        BlockID   id      = generateID();
+        BlockID   id      = (explicitID != null) ? explicitID : generateID();
         BlockNode newNode = new BlockNode(id, normalizedParent, content);
         nodeMap.put(id, newNode);
 
+        if (explicitID != null) {
+            clock.advanceTo(explicitID.getClock());
+        }
+
         List<BlockNode> children = parentNode.getChildren();
         int clampedPos = Math.max(0, Math.min(position, children.size()));
-        children.add(clampedPos, newNode);   // direct insert, no sort
+        children.add(clampedPos, newNode);
         return newNode;
     }
     // -----------------------------------------------------------------------

@@ -58,6 +58,9 @@ public class Operations {
 
     // Block snapshot for undo/redo (JSON of CharCRDT)
     public String blockSnapshot;
+    // a7a
+    public int  insertPosition;   // for MOVE_BLOCK_EXEC: exact index in children list
+    public boolean isMoveOp;      // marks INSERT_BLOCK as part of a move (skip merge on delete)
 
     public String toJson() {
         return new Gson().toJson(this);
