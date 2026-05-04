@@ -107,12 +107,7 @@ public class CrdtSerializer {
         return crdt;
     }
     // REPLACE THIS EXISTING DTO CLASS
-    private static class BlockDto {
-        int idUser; long idClock;
-        int pUser; long pClock;
-        String charJson;
-        boolean deleted; // THE FIX: Track block tombstones for MongoDB
-    }
+
 
     // REPLACE THIS EXISTING METHOD
     public static String toJson(CharCRDT crdt) {
@@ -133,10 +128,21 @@ public class CrdtSerializer {
         return GSON.toJson(dtos);
     }
 
+
+
     // REPLACE THIS EXISTING METHOD
+
+    // ADD THIS DTO CLASS (Below the existing NodeDto class)
+    private static class BlockDto {
+        int idUser; long idClock;
+        int pUser; long pClock;
+        String charJson;
+        boolean deleted;
+    }
+
+    // ADD THESE TWO METHODS (At the bottom of the file)
     public static String toDocumentJson(BlockCRDT doc) {
         List<BlockDto> bDtos = new ArrayList<>();
-        // THE FIX: Use the new method to save all block tombstones
         for (BlockNode bn : doc.getAllNodesIncludingDeleted()) {
             BlockDto b = new BlockDto();
             b.idUser = bn.getId().getUserID();
@@ -144,13 +150,12 @@ public class CrdtSerializer {
             b.pUser = bn.getParentID() != null ? bn.getParentID().getUserID() : -1;
             b.pClock = bn.getParentID() != null ? bn.getParentID().getClock() : -1;
             b.charJson = toJson(bn.getContent());
-            b.deleted = bn.isDeleted(); // THE FIX: Save the deleted flag
+            b.deleted = bn.isDeleted();
             bDtos.add(b);
         }
         return GSON.toJson(bDtos);
     }
 
-    // REPLACE THIS EXISTING METHOD
     public static void loadDocumentJson(String json, BlockCRDT doc) {
         if (json == null || json.isBlank()) return;
         try {
@@ -165,7 +170,7 @@ public class CrdtSerializer {
                 BlockID pID = (b.pUser == -1) ? null : new BlockID(b.pUser, b.pClock);
                 CharCRDT content = fromJson(b.charJson, doc.getUserid());
                 BlockNode node = doc.insertBlockWithID(id, pID, content);
-                if (b.deleted) node.setDeleted(true); // THE FIX: Restore block tombstones
+                if (b.deleted) node.setDeleted(true);
             }
         } catch (Exception e) {
             // BACKWARD COMPATIBILITY: If parsing fails, it's an old single-block save!

@@ -615,4 +615,12 @@ public class Client extends WebSocketClient {
 
     public BlockCRDT getLocalDoc()    { return localDoc; }
     public BlockID getActiveBlockID() { return activeBlockID; }
+
+    public void sendSafely(String json) {
+        if (isOpen()) {
+            send(json);
+        } else {
+            System.err.println("[Client] Network transmission aborted: WebSocket is disconnected.");
+        }
+    }
 }

@@ -141,43 +141,54 @@ public class EditorUI {
                         }
                     }
                     case "VERSIONS_LIST" -> showVersionsDialog(op.payload);
-                    case "DOC_LOADED" -> {
-                        if (op.payload != null && !op.payload.isBlank()) {
-                            CharCRDT crdt = client.getActiveCharCRDT();
-                            if (crdt != null) {
-                                for (CharNode n : doc.GetVisibleNodes()) n.SetDeleted(true);
-                                CharCRDT loaded = CrdtSerializer.fromJson(op.payload, 1);
-                                CharID lastParent = crdt.rootID;
-                                for (CharNode loadedNode : loaded.getOrderedNodes()) {
-                                    CharNode existing = crdt.getNode(loadedNode.getID());
-                                    if (existing != null) {
-                                        existing.SetDeleted(false);
-                                        existing.setBold(loadedNode.isBold());
-                                        existing.setItalic(loadedNode.isItalic());
-                                        lastParent = existing.getID();
-                                    } else {
-                                        CharNode inserted = crdt.RemotelyInsertion(
-                                                loadedNode.getID(), lastParent, loadedNode.getValue()
-                                        );
-                                        if (inserted != null) {
-                                            inserted.setBold(loadedNode.isBold());
-                                            inserted.setItalic(loadedNode.isItalic());
-                                            inserted.SetDeleted(false);
-                                            lastParent = inserted.getID();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        renderDocument(0);
-                        drawRemoteCursors();
-                    }
+//                    case "DOC_LOADED" -> {
+//                        if (op.payload != null && !op.payload.isBlank()) {
+//                            CharCRDT crdt = client.getActiveCharCRDT();
+//                            if (crdt != null) {
+//                                for (CharNode n : doc.GetVisibleNodes()) n.SetDeleted(true);
+//                                CharCRDT loaded = CrdtSerializer.fromJson(op.payload, 1);
+//                                CharID lastParent = crdt.rootID;
+//                                for (CharNode loadedNode : loaded.getOrderedNodes()) {
+//                                    CharNode existing = crdt.getNode(loadedNode.getID());
+//                                    if (existing != null) {
+//                                        existing.SetDeleted(false);
+//                                        existing.setBold(loadedNode.isBold());
+//                                        existing.setItalic(loadedNode.isItalic());
+//                                        lastParent = existing.getID();
+//                                    } else {
+//                                        CharNode inserted = crdt.RemotelyInsertion(
+//                                                loadedNode.getID(), lastParent, loadedNode.getValue()
+//                                        );
+//                                        if (inserted != null) {
+//                                            inserted.setBold(loadedNode.isBold());
+//                                            inserted.setItalic(loadedNode.isItalic());
+//                                            inserted.SetDeleted(false);
+//                                            lastParent = inserted.getID();
+//                                        }
+//                                    }
+//                                }
+//                            }
+//                        }
+//                        renderDocument(0);
+//                        drawRemoteCursors();
+//                    }
                     // FIX: Block ops from remote peers must also refresh the editor.
                     case "INSERT_BLOCK", "DELETE_BLOCK", "SPLIT_BLOCK", "MERGE_BLOCK",
                          "MOVE_BLOCK", "COPY_BLOCK" -> {
                         renderDocument(textPane != null ? textPane.getCaretPosition() : 0);
                         drawRemoteCursors();
                         updateRemoteCursorDisplay();
+                    }
+                    // REPLACE THIS SWITCH CASE
+                    case "DOC_LOADED" -> {
+                        if (op.payload != null && !op.payload.isBlank()) {
+                            // THE FIX: Load entire multi-block document structure
+                            CrdtSerializer.loadDocumentJson(op.payload, client.getLocalDoc());
+                            List<BlockNode> blocks = client.getLocalDoc().getOrderedNodes();
+                            if (!blocks.isEmpty()) client.setActiveBlockID(blocks.get(0).getId());
+                        }
+                        renderDocument(0);
+                        drawRemoteCursors();
                     }
                 }
             });
@@ -525,22 +536,27 @@ public class EditorUI {
         dialog.setVisible(true);
     }
 
+    // REPLACE THIS METHOD
     private String buildVersionPreview(String crdtJson) {
         if (crdtJson == null || crdtJson.isBlank()) return "(empty)";
         try {
-            CharCRDT crdt = CrdtSerializer.fromJson(crdtJson, (int)(System.currentTimeMillis() % 100000));
+            BlockCRDT tempDoc = new BlockCRDT(0, new Clock());
+            CrdtSerializer.loadDocumentJson(crdtJson, tempDoc);
             StringBuilder sb = new StringBuilder();
-            for (CharNode n : crdt.getOrderedNodes()) {
-                if (!n.isDeleted()) sb.append(n.getValue());
+            for (BlockNode bn : tempDoc.getOrderedNodes()) {
+                if (bn.isDeleted() || bn.getContent() == null) continue;
+                for (CharNode n : bn.getContent().getOrderedNodes()) {
+                    if (!n.isDeleted()) sb.append(n.getValue());
+                    if (sb.length() >= 80) break;
+                }
                 if (sb.length() >= 80) break;
             }
             String text = sb.toString().replace('\n', ' ').trim();
-            return text.isEmpty() ? "(empty)" : (text.length() > 75 ? text.substring(0, 75) + "…" : text);
+            return text.isEmpty() ? "(empty)" : (text.length() > 75 ? text.substring(0, 75) + "..." : text);
         } catch (Exception ex) {
             return "(snapshot)";
         }
     }
-
     // =========================================================================
     // BLOCK OPERATIONS – all handlers fixed
     // =========================================================================
@@ -1177,13 +1193,11 @@ public class EditorUI {
         }
     }
 
+    // REPLACE THIS METHOD
     private void onSave() {
-        CharCRDT crdt = client.getActiveCharCRDT();
-        if (crdt == null) {
-            JOptionPane.showMessageDialog(frame, "Not connected to a session.");
-            return;
-        }
-        client.sendSaveDoc(CrdtSerializer.toJson(crdt));
+        // THE FIX: Serialize the entire Block array, not just the active Char array!
+        String fullDocJson = CrdtSerializer.toDocumentJson(client.getLocalDoc());
+        client.sendSaveDoc(fullDocJson);
         JOptionPane.showMessageDialog(frame, "Document saved successfully.");
     }
 

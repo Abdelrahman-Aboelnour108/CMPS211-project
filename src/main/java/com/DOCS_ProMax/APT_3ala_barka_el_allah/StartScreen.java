@@ -15,24 +15,25 @@ public class StartScreen {
    // private DummySessionService sessionService;
     private Client client;
 
+    // REPLACE THIS CONSTRUCTOR
     public StartScreen() {
-        //sessionService = new DummySessionService();
         try {
             Clock clock = new Clock();
-           // BlockCRDT doc = new BlockCRDT(1, clock);
-           // BlockNode block = doc.insertTopLevelBlock(new CharCRDT(1, clock));
-            int userId = (int)(System.currentTimeMillis() % 100000); // unique enough
+            int userId = (int)(System.currentTimeMillis() % 100000);
             BlockCRDT doc = new BlockCRDT(userId, clock);
-            BlockNode block = doc.insertTopLevelBlock(new CharCRDT(userId, clock));
 
-            client = new Client("ws://172.20.10.3:8080/collab", doc, clock, block.getId());
+            // THE FIX: Standardized Genesis Block so all empty documents start with identical IDs
+            BlockID genesisID = new BlockID(0, 0);
+            CharCRDT genesisContent = new CharCRDT(userId, clock);
+            BlockNode block = doc.insertBlockWithID(genesisID, null, genesisContent);
+
+            client = new Client("ws://localhost:8080/collab", doc, clock, block.getId());
             client.connectBlocking();
         } catch (Exception e) {
             e.printStackTrace();
         }
         initializeUI();
     }
-
     private void initializeUI() {
         frame = new JFrame("Collaborative Editor");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -239,43 +240,32 @@ public class StartScreen {
                 client.createSession(username);
             });*/
 
+            // REPLACE THIS SPECIFIC BUTTON ACTION
             openBtn.addActionListener(e -> {
                 dialog.dispose();
-
                 client.setMessageListener(op -> SwingUtilities.invokeLater(() -> {
                     if ("SESSION_CREATED".equals(op.type)) {
-                        // Load saved CRDT content into the local CRDT
+
+                        // THE FIX: Use the new loader to recreate the entire multi-block structure!
                         if (op.payload != null && !op.payload.isBlank()) {
-                            CharCRDT crdt = client.getActiveCharCRDT();
-                            if (crdt != null) {
-                                CharCRDT loaded = CrdtSerializer.fromJson(
-                                        op.payload,
-                                        (int)(System.currentTimeMillis() % 100000)
-                                );
-                                for (CharNode node : loaded.getOrderedNodes()) {
-                                    crdt.RemotelyInsertion(
-                                            node.getID(), node.getParentID(), node.getValue()
-                                    );
-                                }
-                            }
+                            CrdtSerializer.loadDocumentJson(op.payload, client.getLocalDoc());
                         }
-                        // Use the ORIGINAL editor code, not a new one
+
                         client.setOriginalEditorCode(editorCode);
                         new EditorUI(username, op.editorCode, client,docName);
                         frame.dispose();
-
                     } else if ("ERROR".equals(op.type)) {
                         statusLabel.setText(op.payload);
                     }
                 }));
 
-                // Send OPEN_DOC instead of createSession — preserves original codes
                 Operations openOp = new Operations();
                 openOp.type        = "OPEN_DOC";
                 openOp.sessionCode = editorCode;
                 openOp.username    = username;
-                client.send(openOp.toJson());
+                client.sendSafely(openOp.toJson());
             });
+
 
             deleteBtn.addActionListener(e -> {
                 int confirm = JOptionPane.showConfirmDialog(dialog,
