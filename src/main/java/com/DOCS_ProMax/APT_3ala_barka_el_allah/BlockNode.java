@@ -110,6 +110,6 @@ public class BlockNode {
 
     public void addChild(BlockNode child) {
         children.add(child);
-        children.sort(Comparator.comparing(BlockNode::getId));
+        // children.sort(Comparator.comparing(BlockNode::getId));
     }
 }

@@ -78,14 +78,14 @@ public class BlockCRDT {
         BlockNode parentNode = getNode(parentID);
         if (parentNode != null) {
             BlockNode newNode = createNode(parentID, content);
-            parentNode.addChild(newNode);
+            parentNode.getChildren().add(newNode);
         }
     }
 
     /** Appends a new top-level block (child of root) and returns it. */
     public BlockNode insertTopLevelBlock(CharCRDT content) {
         BlockNode newNode = createNode(null, content);
-        root.addChild(newNode);
+        root.getChildren().add(newNode);
         return newNode;
     }
 
@@ -368,7 +368,7 @@ public class BlockCRDT {
         // Build new block with fresh char IDs.
         CharCRDT  newContent = new CharCRDT(this.userid, this.clock);
         BlockNode newBlock   = createNode(parentNode.getId(), newContent);
-        parentNode.addChild(newBlock);
+        parentNode.getChildren().add(newBlock);
 
         // Copy each visible character with a fresh ID (sequential chain).
         CharID lastParentID = newContent.rootID;
@@ -565,8 +565,12 @@ public class BlockCRDT {
         BlockNode parentNode = getNode(parentID);
         if (parentNode == null) parentNode = root;
 
+        // Insert the new sibling IMMEDIATELY AFTER sourceNode
         BlockNode newNode = createNode(parentID, new CharCRDT(this.userid, this.clock));
-        parentNode.addChild(newNode);
+        List<BlockNode> siblings = parentNode.getChildren();
+        int sourceIdx = siblings.indexOf(sourceNode);
+        int insertAt  = (sourceIdx == -1) ? siblings.size() : sourceIdx + 1;
+        siblings.add(insertAt, newNode);
         return newNode;
     }
 
@@ -585,7 +589,7 @@ public class BlockCRDT {
 
         BlockNode newNode = new BlockNode(blockID, normalizedParent, content);
         nodeMap.put(blockID, newNode);
-        parentNode.addChild(newNode);
+        parentNode.getChildren().add(newNode);
         clock.advanceTo(blockID.getClock()); // prevent future ID collision
         return newNode;
     }
