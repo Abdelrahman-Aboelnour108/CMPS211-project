@@ -62,6 +62,20 @@ public class CharCRDT {
         }
     }
 
+    // THE FIX: Exposed full memory state for the Serializer
+    public List<CharNode> getAllNodesIncludingDeleted() {
+        List<CharNode> result = new ArrayList<>();
+        traverseAll(root, result);
+        return result;
+    }
+
+    private void traverseAll(CharNode node, List<CharNode> result) {
+        if (node != root) result.add(node);
+        for (CharNode child : node.getChildren()) {
+            traverseAll(child, result);
+        }
+    }
+
     public List<CharNode> getOrderedNodes() {
         List<CharNode> result = new ArrayList<>();
         depthFirstTraversal(root, result);
@@ -102,7 +116,13 @@ public class CharCRDT {
         }
     }
     // Keep retrying until no more pending ops can be resolved
+    // REPLACE THIS EXISTING METHOD: Mutually recursive StackOverflow loop severed
+    private boolean isRetrying = false;
+
     private void retryPending() {
+        if (isRetrying) return; // Prevent StackOverflow!
+        isRetrying = true;
+
         boolean progress = true;
         while (progress) {
             progress = false;
@@ -116,5 +136,7 @@ public class CharCRDT {
                 }
             }
         }
+
+        isRetrying = false;
     }
 }

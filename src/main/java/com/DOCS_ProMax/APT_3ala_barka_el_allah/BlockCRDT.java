@@ -575,4 +575,19 @@ public class BlockCRDT {
         clock.advanceTo(blockID.getClock()); // prevent future ID collision
         return newNode;
     }
+
+    // THE FIX: Exposed full block memory state for the Serializer
+    public List<BlockNode> getAllNodesIncludingDeleted() {
+        List<BlockNode> result = new ArrayList<>();
+        traverseAllBlocks(root, result);
+        return result;
+    }
+
+    private void traverseAllBlocks(BlockNode node, List<BlockNode> result) {
+        if (node != root) result.add(node);
+        for (BlockNode child : node.getChildren()) {
+            traverseAllBlocks(child, result);
+        }
+    }
+
 }

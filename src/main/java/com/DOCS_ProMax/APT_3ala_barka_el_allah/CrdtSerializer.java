@@ -49,22 +49,22 @@ public class CrdtSerializer {
      * Converts all ordered nodes (including deleted ones for full fidelity) in
      * {@code crdt} into a JSON string.
      */
-    public static String toJson(CharCRDT crdt) {
-        List<NodeDto> dtos = new ArrayList<>();
-        for (CharNode n : crdt.getOrderedNodes()) {
-            NodeDto dto = new NodeDto();
-            dto.userID = n.getID().getUserID();
-            dto.clock = n.getID().getClock();
-            dto.parentUser = n.getParentID() != null ? n.getParentID().getUserID() : -1;
-            dto.parentClock = n.getParentID() != null ? n.getParentID().getClock() : -1;
-            dto.value = n.getValue();
-            dto.bold = n.isBold();
-            dto.italic = n.isItalic();
-            dto.deleted = n.isDeleted();
-            dtos.add(dto);
-        }
-        return GSON.toJson(dtos);
-    }
+//    public static String toJson(CharCRDT crdt) {
+//        List<NodeDto> dtos = new ArrayList<>();
+//        for (CharNode n : crdt.getOrderedNodes()) {
+//            NodeDto dto = new NodeDto();
+//            dto.userID = n.getID().getUserID();
+//            dto.clock = n.getID().getClock();
+//            dto.parentUser = n.getParentID() != null ? n.getParentID().getUserID() : -1;
+//            dto.parentClock = n.getParentID() != null ? n.getParentID().getClock() : -1;
+//            dto.value = n.getValue();
+//            dto.bold = n.isBold();
+//            dto.italic = n.isItalic();
+//            dto.deleted = n.isDeleted();
+//            dtos.add(dto);
+//        }
+//        return GSON.toJson(dtos);
+//    }
 
     // -----------------------------------------------------------------------
     // Deserialise
@@ -105,5 +105,73 @@ public class CrdtSerializer {
             }
         }
         return crdt;
+    }
+    // REPLACE THIS EXISTING DTO CLASS
+    private static class BlockDto {
+        int idUser; long idClock;
+        int pUser; long pClock;
+        String charJson;
+        boolean deleted; // THE FIX: Track block tombstones for MongoDB
+    }
+
+    // REPLACE THIS EXISTING METHOD
+    public static String toJson(CharCRDT crdt) {
+        List<NodeDto> dtos = new ArrayList<>();
+        // THE FIX: Use the new method to save all tombstones
+        for (CharNode n : crdt.getAllNodesIncludingDeleted()) {
+            NodeDto dto = new NodeDto();
+            dto.userID = n.getID().getUserID();
+            dto.clock = n.getID().getClock();
+            dto.parentUser = n.getParentID() != null ? n.getParentID().getUserID() : -1;
+            dto.parentClock = n.getParentID() != null ? n.getParentID().getClock() : -1;
+            dto.value = n.getValue();
+            dto.bold = n.isBold();
+            dto.italic = n.isItalic();
+            dto.deleted = n.isDeleted();
+            dtos.add(dto);
+        }
+        return GSON.toJson(dtos);
+    }
+
+    // REPLACE THIS EXISTING METHOD
+    public static String toDocumentJson(BlockCRDT doc) {
+        List<BlockDto> bDtos = new ArrayList<>();
+        // THE FIX: Use the new method to save all block tombstones
+        for (BlockNode bn : doc.getAllNodesIncludingDeleted()) {
+            BlockDto b = new BlockDto();
+            b.idUser = bn.getId().getUserID();
+            b.idClock = bn.getId().getClock();
+            b.pUser = bn.getParentID() != null ? bn.getParentID().getUserID() : -1;
+            b.pClock = bn.getParentID() != null ? bn.getParentID().getClock() : -1;
+            b.charJson = toJson(bn.getContent());
+            b.deleted = bn.isDeleted(); // THE FIX: Save the deleted flag
+            bDtos.add(b);
+        }
+        return GSON.toJson(bDtos);
+    }
+
+    // REPLACE THIS EXISTING METHOD
+    public static void loadDocumentJson(String json, BlockCRDT doc) {
+        if (json == null || json.isBlank()) return;
+        try {
+            Type listType = new TypeToken<List<BlockDto>>(){}.getType();
+            List<BlockDto> dtos = GSON.fromJson(json, listType);
+
+            // Wipe existing screen blocks
+            doc.getAllNodesIncludingDeleted().forEach(bn -> bn.setDeleted(true));
+
+            for (BlockDto b : dtos) {
+                BlockID id = new BlockID(b.idUser, b.idClock);
+                BlockID pID = (b.pUser == -1) ? null : new BlockID(b.pUser, b.pClock);
+                CharCRDT content = fromJson(b.charJson, doc.getUserid());
+                BlockNode node = doc.insertBlockWithID(id, pID, content);
+                if (b.deleted) node.setDeleted(true); // THE FIX: Restore block tombstones
+            }
+        } catch (Exception e) {
+            // BACKWARD COMPATIBILITY: If parsing fails, it's an old single-block save!
+            CharCRDT legacy = fromJson(json, doc.getUserid());
+            doc.getAllNodesIncludingDeleted().forEach(bn -> bn.setDeleted(true));
+            doc.insertTopLevelBlock(legacy);
+        }
     }
 }
