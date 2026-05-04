@@ -20,10 +20,14 @@ import java.awt.datatransfer.StringSelection;
 
 public class EditorUI {
 
-
+    // -----------------------------------------------------------------------
+    // Constants
+    // -----------------------------------------------------------------------
     private static final int MAX_LINES_PER_BLOCK = 10;
 
-
+    // -----------------------------------------------------------------------
+    // UI components
+    // -----------------------------------------------------------------------
     private JFrame frame;
     private JTextPane textPane;
     private String username;
@@ -51,14 +55,16 @@ public class EditorUI {
     private final Map<String, Object> commentHighlights = new HashMap<>();
     private JPanel commentsListPanel;
 
-
+    // Document model
     private Document doc;
 
 
     private BlockID copiedBlockID = null;
 
 
-
+    // -----------------------------------------------------------------------
+    // Constructor
+    // -----------------------------------------------------------------------
     public EditorUI(String username, String sessionCode, Client client, String documentName) {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -72,7 +78,7 @@ public class EditorUI {
         this.sessionCode = sessionCode;
         this.client = client;
 
-
+        // Message listener
         client.setMessageListener(op -> {
             SwingUtilities.invokeLater(() -> {
                 switch (op.type) {
@@ -145,14 +151,14 @@ public class EditorUI {
 
                         BlockCRDT localDoc = client.getLocalDoc();
 
-
+                        // Wipe all existing blocks
                         localDoc.getAllNodesIncludingDeleted()
                                 .forEach(bn -> bn.setDeleted(true));
 
-
+                        // Reload full multi-block document
                         CrdtSerializer.loadDocumentJson(op.payload, localDoc);
 
-
+                        // Point activeBlockID at the first live block
                         List<BlockNode> live = localDoc.getOrderedNodes();
                         if (!live.isEmpty()) {
                             client.setActiveBlockID(live.get(0).getId());
@@ -162,7 +168,7 @@ public class EditorUI {
                         drawRemoteCursors();
                     }
                     case "INSERT_BLOCK", "DELETE_BLOCK", "SPLIT_BLOCK", "MERGE_BLOCK",
-                         "MOVE_BLOCK", "COPY_BLOCK" -> {
+                         "MOVE_BLOCK", "COPY_BLOCK","MOVE_BLOCK_EXEC" -> {
                         renderDocument(textPane != null ? textPane.getCaretPosition() : 0);
                         drawRemoteCursors();
                         updateRemoteCursorDisplay();
@@ -173,7 +179,7 @@ public class EditorUI {
 
         SwingUtilities.invokeLater(() -> { renderDocument(0); drawRemoteCursors(); });
 
-
+        // Startup poller
         javax.swing.Timer startupPoller = new javax.swing.Timer(250, null);
         int[] pollCount = {0};
         startupPoller.addActionListener(ev -> {
@@ -189,7 +195,7 @@ public class EditorUI {
         client.requestActiveUsers();
         client.sendGetComments();
 
-        // frame
+        // Frame
         frame = new JFrame(
                 "📄 " + documentName + "  |  " + username +
                         (client.isEditor() ? "  —  EDITOR" : "  —  VIEWER [READ ONLY]")
@@ -198,7 +204,7 @@ public class EditorUI {
         frame.setSize(900, 650);
         frame.setLayout(new BorderLayout());
 
-        // toolbar
+        // Toolbar
         JToolBar toolBar = new JToolBar();
         toolBar.setFloatable(false);
         Font buttonFont = new Font("Segoe UI", Font.BOLD, 13);
@@ -301,7 +307,7 @@ public class EditorUI {
         }
         frame.add(toolBar, BorderLayout.NORTH);
 
-        // panel lel actiive users, cursors, w comments
+        // Right panel
         JPanel rightPanel = new JPanel(new BorderLayout());
         rightPanel.add(createUsersPanel(), BorderLayout.NORTH);
         rightPanel.add(createCursorPanel(), BorderLayout.CENTER);
@@ -337,7 +343,10 @@ public class EditorUI {
             }
 
         });
-
+        // ── FILE: EditorUI.java ───────────────────────────────────────────────────
+// ADD a PopupMenuListener so pasteBlockItem enables/disables dynamically
+// Place this right after the two lines where the MouseListener is added
+// (the mousePressed / mouseReleased block we added previously)
 
         contextMenu.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
             @Override
@@ -346,7 +355,7 @@ public class EditorUI {
                 for (int i = 0; i < contextMenu.getComponentCount(); i++) {
                     java.awt.Component comp = contextMenu.getComponent(i);
                     if (comp instanceof JMenuItem item
-                            && " Paste Block".equals(item.getText())) {
+                            && "📌 Paste Block".equals(item.getText())) {
                         item.setEnabled(copiedBlockID != null);
                         break;
                     }
@@ -440,7 +449,14 @@ public class EditorUI {
         frame.setVisible(true);
     }
 
-
+    // =========================================================================
+    // Helper: compute LOCAL index of a CharNode inside its block
+    // =========================================================================
+    /**
+     * Returns the visible-character position of {@code target} within its block.
+     * "Visible" means non-deleted.  Used to compute the split index after an
+     * auto-split triggered by pressing Enter.
+     */
     private int computeLocalIndex(BlockID blockID, CharNode target) {
         BlockNode block = client.getLocalDoc().getBlock(blockID);
         if (block == null || block.getContent() == null) return -1;
@@ -452,7 +468,10 @@ public class EditorUI {
         }
         return -1;
     }
-//history of pest version el stored
+
+    // =========================================================================
+    // Version history
+    // =========================================================================
     private void requestVersionHistory() {
         String code = client.getEditorCode() != null ? client.getEditorCode() : client.getSessionCode();
         if (code == null) {
@@ -553,7 +572,7 @@ public class EditorUI {
         if (crdtJson == null || crdtJson.isBlank()) return "(empty)";
         StringBuilder sb = new StringBuilder();
         try {
-
+            // Try multi-block format (new saves)
             BlockCRDT tempDoc = new BlockCRDT(0, new Clock());
             CrdtSerializer.loadDocumentJson(crdtJson, tempDoc);
             for (BlockNode bn : tempDoc.getOrderedNodes()) {
@@ -565,7 +584,7 @@ public class EditorUI {
                 if (sb.length() >= 80) break;
             }
         } catch (Exception ex) {
-
+            // Fall back to single-block legacy format
             try {
                 CharCRDT crdt = CrdtSerializer.fromJson(crdtJson,
                         (int)(System.currentTimeMillis() % 100000));
@@ -580,8 +599,11 @@ public class EditorUI {
         String text = sb.toString().replace('\n', ' ').trim();
         return text.isEmpty() ? "(empty)"
                 : (text.length() > 75 ? text.substring(0, 75) + "…" : text);
-    }
-
+    }    // =========================================================================
+    // BLOCK OPERATIONS
+    // =========================================================================
+// ── FILE: EditorUI.java ───────────────────────────────────────────────────
+// REPLACE buildContextMenu() entirely
 
     private JPopupMenu buildContextMenu() {
         JPopupMenu menu = new JPopupMenu();
@@ -633,7 +655,7 @@ public class EditorUI {
 
             JMenuItem pasteBlockItem = new JMenuItem("📌 Paste Block");
             pasteBlockItem.addActionListener(e -> handlePasteBlock());
-
+            // Gray out paste if nothing is copied yet
             pasteBlockItem.setEnabled(copiedBlockID != null);
 
             JMenuItem splitBlockItem = new JMenuItem("✂ Split Block Here");
@@ -653,7 +675,13 @@ public class EditorUI {
         }
         return menu;
     }
+// ── FILE: EditorUI.java ───────────────────────────────────────────────────
+// REPLACE handleMoveBlock() entirely
 
+// ── FILE: EditorUI.java ───────────────────────────────────────────────────
+// REPLACE handleMoveBlock() entirely
+
+// REPLACE handleMoveBlock() entirely in EditorUI.java
 
     private void handleMoveBlock(int direction) {
         BlockID activeBlockID = client.getActiveBlockID();
@@ -666,7 +694,7 @@ public class EditorUI {
         List<BlockNode> ordered = blockDoc.getOrderedNodes();
         if (ordered.isEmpty()) return;
 
-
+        // Find current index in live (non-deleted) list
         int currentIdx = -1;
         for (int i = 0; i < ordered.size(); i++) {
             if (ordered.get(i).getId().equals(activeBlockID)) {
@@ -692,21 +720,34 @@ public class EditorUI {
         BlockNode sourceBlock     = ordered.get(currentIdx);
         BlockNode targetLiveBlock = ordered.get(targetIdx);
 
-
-
+        // -----------------------------------------------------------------------
+        // Determine anchor: the live block that the moved block will go AFTER.
+        // anchor == null means "insert at very top".
+        //
+        // Moving UP   (direction == -1):
+        //   The moved block lands before targetLiveBlock.
+        //   anchor = the live block just before targetLiveBlock, or null if none.
+        //
+        // Moving DOWN (direction == +1):
+        //   The moved block lands after targetLiveBlock.
+        //   anchor = targetLiveBlock itself.
+        // -----------------------------------------------------------------------
         BlockID anchorID;
         if (direction == -1) {
-
+            // Moving up: anchor is the live block before targetLiveBlock
             if (targetIdx == 0) {
                 anchorID = null; // goes to very top
             } else {
                 anchorID = ordered.get(targetIdx - 1).getId();
             }
         } else {
-
+            // Moving down: anchor is targetLiveBlock
             anchorID = targetLiveBlock.getId();
         }
 
+        // -----------------------------------------------------------------------
+        // Build fresh content copy with new char IDs
+        // -----------------------------------------------------------------------
         CharCRDT newContent = new CharCRDT(blockDoc.getUserid(), blockDoc.getClock());
         CharID lastParentID = newContent.rootID;
         for (CharNode cn : sourceBlock.getChars()) {
@@ -718,7 +759,9 @@ public class EditorUI {
             }
         }
 
-
+        // -----------------------------------------------------------------------
+        // Compute local insert position from anchor
+        // -----------------------------------------------------------------------
         List<BlockNode> rawChildren = blockDoc.getRootChildren();
         int insertPos;
         if (anchorID == null) {
@@ -729,17 +772,23 @@ public class EditorUI {
             insertPos = (rawAnchorIdx == -1) ? rawChildren.size() : rawAnchorIdx + 1;
         }
 
-       //el block fel right place
-        BlockNode movedBlock = blockDoc.insertBlockAtPosition(null, newContent, insertPos);
+        // -----------------------------------------------------------------------
+        // Insert new block locally at computed position
+        // -----------------------------------------------------------------------
+        BlockNode movedBlock = blockDoc.insertBlockAfterAnchor(null, newContent);
         if (movedBlock == null) {
             JOptionPane.showMessageDialog(frame, "Move failed.");
             return;
         }
 
-        //delete el asleya
+        // -----------------------------------------------------------------------
+        // Soft-delete the original block (no merge side effects)
+        // -----------------------------------------------------------------------
         blockDoc.softDeleteNode(activeBlockID);
 
-
+        // -----------------------------------------------------------------------
+        // Send ONE atomic message so remote peers replay identically using anchor
+        // -----------------------------------------------------------------------
         client.sendBeginGroup();
         client.sendMoveBlockExec(movedBlock, anchorID, activeBlockID);
         client.sendEndGroup();
@@ -764,11 +813,16 @@ public class EditorUI {
             return;
         }
         copiedBlockID = activeBlockID;
-
+        // Briefly flash a status message in the frame title to confirm copy
         String originalTitle = frame.getTitle();
-        frame.setTitle(" Block Copied!  —  " + originalTitle);
+        frame.setTitle("✅ Block Copied!  —  " + originalTitle);
         new javax.swing.Timer(1500, ev -> frame.setTitle(originalTitle)).start();
     }
+    // ── FILE: EditorUI.java ───────────────────────────────────────────────────
+// 7. ADD this new method handlePasteBlock() anywhere in the private methods section
+
+// ── FILE: EditorUI.java ───────────────────────────────────────────────────
+// REPLACE handlePasteBlock() entirely
 
     private void handlePasteBlock() {
         if (copiedBlockID == null) {
@@ -786,7 +840,7 @@ public class EditorUI {
             return;
         }
 
-
+        // Find insertion position: after active block in raw list
         BlockID   activeBlockID = client.getActiveBlockID();
         List<BlockNode> rawChildren = blockDoc.getRootChildren();
         BlockNode activeBlock = (activeBlockID != null)
@@ -800,7 +854,7 @@ public class EditorUI {
             insertPos = rawChildren.size();
         }
 
-
+        // Build fresh content with new IDs
         CharCRDT newContent = new CharCRDT(blockDoc.getUserid(), blockDoc.getClock());
         CharID lastParentID = newContent.rootID;
         for (CharNode cn : sourceBlock.getChars()) {
@@ -812,16 +866,16 @@ public class EditorUI {
             }
         }
 
-        // Insert locally
-        BlockNode pastedBlock = blockDoc.insertBlockAtPosition(
-                null, newContent, insertPos);
+        BlockID anchorID = (activeBlock != null && !activeBlock.isDeleted())
+                ? activeBlockID : null;
+
+        // Insert locally using ghost-safe anchor insert
+        BlockNode pastedBlock = blockDoc.insertBlockAfterAnchor(anchorID, newContent);
         if (pastedBlock == null) {
             JOptionPane.showMessageDialog(frame, "Paste failed."); return;
         }
 
-        BlockID anchorID = (activeBlock != null && !activeBlock.isDeleted())
-                ? activeBlockID : null;
-
+// Send ONE atomic message
         client.sendBeginGroup();
         client.sendMoveBlockExec(pastedBlock, anchorID, null);
         client.sendEndGroup();
@@ -834,7 +888,12 @@ public class EditorUI {
             updateRemoteCursorDisplay();
         });
     }
-
+    // -------------------------------------------------------------------------
+    // FIX: handleManualSplitBlock
+    // Uses sendSplitBlock(blockID, newBlock, localIndex) so every remote peer
+    // receives the exact BlockID of the new second block and recreates it with
+    // the same identity → characters typed there are visible on all peers.
+    // -------------------------------------------------------------------------
     private void handleManualSplitBlock() {
         BlockID activeBlockID = client.getActiveBlockID();
         if (activeBlockID == null) { JOptionPane.showMessageDialog(frame, "No active block."); return; }
@@ -856,7 +915,7 @@ public class EditorUI {
 
             if (block.getId().equals(activeBlockID)) {
                 activeBlock = block;
-
+                // localIndex = cursor position relative to start of this block
                 localIndex  = Math.max(0, Math.min(globalCursorPos - globalOffset, visibleCount));
                 break;
             }
@@ -868,7 +927,7 @@ public class EditorUI {
             return;
         }
 
-
+        // Count visible chars in active block
         int totalVisible = (int) activeBlock.getContent().getOrderedNodes()
                 .stream().filter(cn -> !cn.isDeleted()).count();
 
@@ -878,14 +937,14 @@ public class EditorUI {
             return;
         }
 
-
+        // Insert '\n' at split point so the split behaves like pressing Enter
         CharID parentID = (localIndex == 0)
                 ? activeBlock.getContent().rootID
                 : activeBlock.getChars().get(localIndex - 1).getID();
         CharNode newline = activeBlock.getContent().insertNode(parentID, '\n');
         if (newline != null) client.sendInsertChar(newline);
 
-
+        // Now split AFTER the newline (localIndex + 1)
         BlockNode newBlock = blockDoc.splitBlockAtCursor(activeBlockID, localIndex + 1);
         if (newBlock != null) {
             client.sendSplitBlock(activeBlockID, newBlock, localIndex + 1);
@@ -926,6 +985,9 @@ public class EditorUI {
         updateRemoteCursorDisplay();
     }
 
+    // =========================================================================
+    // Render helpers
+    // =========================================================================
 
     private List<CharNode> getAllVisibleNodes() {
         List<CharNode> result = new java.util.ArrayList<>();
@@ -989,7 +1051,10 @@ public class EditorUI {
         textPane.setCaretPosition(Math.min(newCursorPosition, styledDoc.getLength()));
         drawCommentHighlights();
     }
-// actually n3ml el side Panels
+
+    // =========================================================================
+    // Panels
+    // =========================================================================
     private JPanel createUsersPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setPreferredSize(new Dimension(200, 150));
@@ -1022,7 +1087,9 @@ public class EditorUI {
         return panel;
     }
 
-
+    // =========================================================================
+    // Helpers
+    // =========================================================================
     private void updateActiveBlockFromCursor(int cursorPos) {
         int currentCount = 0;
         for (BlockNode block : client.getLocalDoc().getOrderedNodes()) {
@@ -1142,7 +1209,9 @@ public class EditorUI {
         if (commentsListPanel != null) { commentsListPanel.revalidate(); commentsListPanel.repaint(); }
     }
 
-  //importing w exporting w save
+    // =========================================================================
+    // Import / Export / Save
+    // =========================================================================
     private void onImport() {
         JFileChooser chooser = new JFileChooser();
         chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Text files (*.txt)", "txt"));
@@ -1215,7 +1284,8 @@ public class EditorUI {
         }
     }
 
-
+// ── FILE: EditorUI.java ───────────────────────────────────────────────────
+// REPLACE onSave() entirely
 
     private void onSave() {
         BlockCRDT blockDoc = client.getLocalDoc();
@@ -1223,12 +1293,13 @@ public class EditorUI {
             JOptionPane.showMessageDialog(frame, "Not connected to a session.");
             return;
         }
-
+        // Ensure username is set on the client before saving
         String docJson = CrdtSerializer.toDocumentJson(blockDoc);
 
-
+        // sendSaveDoc already sets ownerUsername = username from client field
+        // Use the overload that also sends the document name
         String currentTitle = frame.getTitle();
-
+        // Extract doc name from frame title: "📄 NAME  |  username..."
         String docName = "Untitled";
         if (currentTitle.contains("|")) {
             String part = currentTitle.substring(
@@ -1241,7 +1312,9 @@ public class EditorUI {
         JOptionPane.showMessageDialog(frame, "Document saved successfully.");
     }
 
-
+    // =========================================================================
+    // Copy / Paste / Cut
+    // =========================================================================
     private String cleanClipboardText(String text) {
         if (text == null) return "";
         text = text.replace("\r\n", "\n").replace("\r", "\n");
@@ -1250,7 +1323,7 @@ public class EditorUI {
             if (!Character.isISOControl(ch) || ch == '\n' || ch == '\t') cleaned.append(ch);
         return cleaned.toString();
     }
-//copy and paste and cut bi el keyboard buttons
+
     private void handleCopy() {
         String sel = cleanClipboardText(textPane.getSelectedText());
         if (sel == null || sel.isEmpty()) return;
@@ -1299,7 +1372,9 @@ public class EditorUI {
         drawRemoteCursors();
     }
 
-   //Cursors
+    // =========================================================================
+    // Cursor painter
+    // =========================================================================
     private static class CursorPainter implements Highlighter.HighlightPainter {
         private final Color color;
         private final int cursorPos;
